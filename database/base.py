@@ -1,8 +1,8 @@
 """
 数据库基类配置
 """
-from sqlalchemy import DeclarativeBase, MetaData
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import MetaData
 from datetime import datetime
 from typing import Optional
 import uuid
