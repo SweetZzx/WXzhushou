@@ -36,6 +36,23 @@ asyncio==3.4.3
 # 工具类
 python-dateutil==2.8.2
 
-# 数据库（后续扩展）
-# sqlalchemy==2.0.23
-# aiosqlite==0.19.0
+# ============================================
+# 第二阶段：日程助手依赖
+# ============================================
+
+# LangChain 框架
+langchain==0.1.20
+langchain-community==0.0.38
+
+# 数据库
+sqlalchemy==2.0.23
+aiosqlite==0.19.0
+
+# 数据库迁移
+alembic==1.13.1
+
+# 任务调度
+apscheduler==3.10.4
+
+# 时间解析
+dateparser==1.2.0

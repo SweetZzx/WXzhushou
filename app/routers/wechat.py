@@ -1,6 +1,7 @@
 """
 微信路由模块
 处理微信服务器的验证和消息接收
+集成 LangChain Agent 处理日程管理
 """
 from fastapi import APIRouter, Request, Query, Depends, Response
 from fastapi.responses import PlainTextResponse
@@ -8,9 +9,11 @@ from typing import Optional
 import hashlib
 import logging
 
-from config import WECHAT_TOKEN, WECHAT_MODE
+from config import WECHAT_TOKEN, WECHAT_MODE, ZHIPU_API_KEY
 from services.wechat_service import WeChatService
 from services.ai_service import AIService
+from services.agent_service import ScheduleAgentService
+from database.session import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +22,18 @@ router = APIRouter()
 # 初始化服务
 wechat_service = WeChatService()
 ai_service = AIService()
+agent_service = ScheduleAgentService(ZHIPU_API_KEY)
+
+
+async def get_db():
+    """获取数据库会话"""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 class XMLResponse:
@@ -76,11 +91,12 @@ async def wechat_verify(
 
 
 @router.post("")
-async def wechat_message(request: Request):
+async def wechat_message(request: Request, db = Depends(get_db)):
     """
     微信消息接收接口
 
     处理用户发送的消息并返回AI回复
+    使用 LangChain Agent 处理日程管理相关请求
     """
     from fastapi.responses import Response
 
@@ -111,8 +127,8 @@ async def wechat_message(request: Request):
             xml_response = wechat_service.create_response_xml("暂不支持此类型消息", from_user, to_user)
             return Response(content=xml_response, media_type="application/xml")
 
-        # 调用AI获取回复
-        ai_response = await ai_service.chat(content, from_user)
+        # 使用 Agent 处理消息（包含日程管理和普通对话）
+        ai_response = await agent_service.process(content, from_user, db)
 
         logger.info(f"AI回复: {ai_response}")
 

@@ -5,6 +5,7 @@ import uvicorn
 from dotenv import load_dotenv
 import sys
 from pathlib import Path
+import os
 
 # 加载环境变量
 load_dotenv()
@@ -12,8 +13,13 @@ load_dotenv()
 # 添加项目根目录到Python路径
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import Config, SERVER_HOST, SERVER_PORT, SERVER_RELOAD
+from config import Config, SERVER_HOST, SERVER_PORT, SERVER_RELOAD, DATA_DIR
 from app.server import app
+
+
+def ensure_data_dir():
+    """确保数据目录存在"""
+    os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def main():
@@ -22,6 +28,9 @@ def main():
     if not Config.validate():
         print("配置验证失败，请检查环境变量设置")
         return
+
+    # 确保数据目录存在
+    ensure_data_dir()
 
     # 打印配置信息
     Config.print_config()

@@ -37,8 +37,11 @@ LOG_FORMAT: str = os.getenv(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-# 数据库配置（后续扩展）
-DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///data/wechat.db")
+# 数据库配置
+DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/schedules.db")
+
+# 数据目录
+DATA_DIR: str = os.getenv("DATA_DIR", str(BASE_DIR / "data"))
 
 # AI对话配置
 DEFAULT_SYSTEM_PROMPT: str = os.getenv(
