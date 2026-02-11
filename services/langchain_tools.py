@@ -3,7 +3,7 @@ LangChain 工具定义
 为日程助手提供可以被 Agent 调用的工具函数
 """
 from langchain.tools import StructuredTool
-from pydantic import BaseModel, Field
+from pydantic.v1 import BaseModel, Field
 from typing import Optional
 import logging
 from datetime import datetime
