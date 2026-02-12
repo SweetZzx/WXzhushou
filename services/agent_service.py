@@ -9,6 +9,7 @@ import logging
 
 from services.langchain_tools import create_schedule_tools
 from services.schedule_service import ScheduleService
+from services.common_tools import get_common_tools
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,10 @@ class ScheduleAgentService:
             # 创建日程服务实例
             schedule_service = ScheduleService(db_session)
 
-            # 创建工具集
-            tools = create_schedule_tools(schedule_service, user_id)
+            # 创建工具集：通用工具 + 日程管理工具
+            common_tools = get_common_tools()
+            schedule_tools = create_schedule_tools(schedule_service, user_id)
+            tools = common_tools + schedule_tools
 
             # 使用新的 create_agent API (LangChain 1.0)
             agent = create_agent(
