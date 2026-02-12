@@ -30,11 +30,27 @@ async def startup_event():
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}")
 
+    # 启动提醒服务
+    try:
+        from services.reminder_service import reminder_service
+        await reminder_service.start()
+        logger.info("提醒服务启动成功")
+    except Exception as e:
+        logger.error(f"提醒服务启动失败: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时的事件"""
     logger.info("微信AI助手服务关闭")
+
+    # 停止提醒服务
+    try:
+        from services.reminder_service import reminder_service
+        await reminder_service.stop()
+        logger.info("提醒服务已停止")
+    except Exception as e:
+        logger.error(f"停止提醒服务失败: {e}")
 
     # 关闭数据库连接
     try:
@@ -64,6 +80,18 @@ async def health_check():
         "service": "wechat-ai-assistant",
         "version": "2.0.0"
     }
+
+
+@app.post("/test/push")
+async def test_push():
+    """测试推送接口 - 手动触发测试提醒"""
+    try:
+        from services.reminder_service import reminder_service
+        await reminder_service.send_test_reminder_now()
+        return {"status": "ok", "message": "测试提醒已发送，请查看日志"}
+    except Exception as e:
+        logger.error(f"测试推送失败: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
 
 # 导入路由

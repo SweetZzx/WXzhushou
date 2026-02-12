@@ -123,5 +123,10 @@ async def wechat_message(request: Request, db = Depends(get_db)):
 
     except Exception as e:
         logger.error(f"处理微信消息时出错: {e}", exc_info=True)
-        # 返回成功响应，避免微信重试
-        return Response(content="success", media_type="text/plain")
+        # 返回错误信息给用户
+        error_msg = f"系统错误: {str(e)}"
+        try:
+            xml_response = wechat_service.create_response_xml(error_msg, from_user, to_user)
+            return Response(content=xml_response, media_type="application/xml")
+        except:
+            return Response(content="success", media_type="text/plain")

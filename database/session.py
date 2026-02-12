@@ -39,6 +39,7 @@ async def init_db():
 
     # 导入所有模型，确保表被注册
     from models.schedule import Schedule
+    from models.user_settings import UserSettings
     from database.base import Base
 
     # 创建所有表

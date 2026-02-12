@@ -155,9 +155,13 @@ class TimeParser:
         for cn_num, ar_num in TimeParser.CHINESE_NUMBERS.items():
             converted_str = converted_str.replace(cn_num, str(ar_num))
 
-        # 匹配 "3点"、"15点"、"下午3点"、"15:30" 等格式
+        # 处理"半"的情况（如"三点半" -> "3点半" -> "3点30"）
+        if "半" in converted_str:
+            converted_str = converted_str.replace("半", "30")
+
+        # 匹配 "3点"、"15点"、"下午3点"、"15:30"、"3点半" 等格式
         patterns = [
-            r"(\d{1,2})点(\d{1,2})分?",  # 3点、3点30、15点
+            r"(\d{1,2})点(\d{1,2})分?",  # 3点30、15点30
             r"(\d{1,2}):(\d{2})",  # 15:30
             r"(\d{1,2})\.(\d{2})",  # 15.30
             r"(\d{1,2})点",  # 6点、15点（无分钟）
