@@ -1,9 +1,9 @@
 """
 LangChain Agent 服务
-整合 GLM 和工具调用 - 使用 LangChain 1.0 API
+整合 GLM 和工具调用 - 使用 LangChain 官方 ZhipuAI 集成
 """
 from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI
+from langchain_community.chat_models import ChatZhipuAI
 from typing import List
 import logging
 
@@ -55,21 +55,20 @@ class ScheduleAgentService:
 
         Args:
             zhipu_api_key: 智谱AI API密钥
-            model: 模型名称
+            model: 模型名称 (glm-4, glm-4-plus, glm-4-flash 等)
         """
         self.api_key = zhipu_api_key
         self.model = model
 
-        # 初始化 LLM（使用 OpenAI 兼容接口）
-        # 智谱AI支持 OpenAI 兼容的 API 格式
-        self.llm = ChatOpenAI(
-            api_key=zhipu_api_key,
-            base_url="https://open.bigmodel.cn/api/paas/v4/",
+        # 使用 LangChain 官方的 ZhipuAI 集成
+        # 这会使用官方 API endpoint，支持资源包
+        self.llm = ChatZhipuAI(
             model=model,
             temperature=0.7,
+            zhipuai_api_key=zhipu_api_key,
         )
 
-        logger.info("ScheduleAgentService 初始化成功")
+        logger.info(f"ScheduleAgentService 初始化成功，使用模型: {model}")
 
     async def process(
         self,

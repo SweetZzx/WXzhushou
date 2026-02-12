@@ -43,6 +43,7 @@ python-dateutil==2.8.2
 # LangChain 框架 (1.0 稳定版)
 langchain==1.0.8
 langchain-openai==1.1.9
+langchain-community==0.3.14
 
 # 数据库
 sqlalchemy==2.0.23
