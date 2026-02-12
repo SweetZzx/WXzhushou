@@ -101,8 +101,8 @@ class ScheduleAgentService:
                 system_prompt=self.SYSTEM_PROMPT
             )
 
-            # 执行 Agent
-            result = agent.invoke({
+            # 执行 Agent (使用异步调用)
+            result = await agent.ainvoke({
                 "messages": [{"role": "user", "content": message}]
             })
 
