@@ -1,11 +1,9 @@
 """
 LangChain Agent 服务
-整合 GLM 和工具调用
+整合 GLM 和工具调用 - 使用 LangChain 1.0 API
 """
-from langchain.agents import AgentExecutor, create_openai_functions_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage
 from typing import List
 import logging
 
@@ -22,10 +20,10 @@ class ScheduleAgentService:
     SYSTEM_PROMPT = """你是一个智能日程助手，可以帮助用户管理日程。
 
 你的功能包括：
-1. 📅 创建日程 - 记录用户安排的时间和事件
-2. 🔍 查询日程 - 帮用户查看特定日期的安排
-3. ✏️ 修改日程 - 更新已存在的日程信息
-4. 🗑️ 删除日程 - 移除不需要的日程
+1. 创建日程 - 记录用户安排的时间和事件
+2. 查询日程 - 帮用户查看特定日期的安排
+3. 修改日程 - 更新已存在的日程信息
+4. 删除日程 - 移除不需要的日程
 
 使用指南：
 - 创建日程时，尽量获取完整信息（标题、时间、描述）
@@ -50,9 +48,9 @@ class ScheduleAgentService:
         # 初始化 LLM（使用 OpenAI 兼容接口）
         # 智谱AI支持 OpenAI 兼容的 API 格式
         self.llm = ChatOpenAI(
-            openai_api_key=zhipu_api_key,
-            openai_api_base="https://open.bigmodel.cn/api/paas/v4/",
-            model_name=model,
+            api_key=zhipu_api_key,
+            base_url="https://open.bigmodel.cn/api/paas/v4/",
+            model=model,
             temperature=0.7,
         )
 
@@ -82,36 +80,24 @@ class ScheduleAgentService:
             # 创建工具集
             tools = create_schedule_tools(schedule_service, user_id)
 
-            # 创建 Prompt
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", self.SYSTEM_PROMPT),
-                MessagesPlaceholder(variable_name="chat_history", optional=True),
-                ("human", "{input}"),
-                MessagesPlaceholder(variable_name="agent_scratchpad"),
-            ])
-
-            # 创建 Agent
-            agent = create_openai_functions_agent(
-                llm=self.llm,
+            # 使用新的 create_agent API (LangChain 1.0)
+            agent = create_agent(
+                self.llm,
                 tools=tools,
-                prompt=prompt
-            )
-
-            # 创建 AgentExecutor
-            agent_executor = AgentExecutor(
-                agent=agent,
-                tools=tools,
-                verbose=True,
-                handle_parsing_errors=True,
-                max_iterations=3,
+                system_prompt=self.SYSTEM_PROMPT
             )
 
             # 执行 Agent
-            result = await agent_executor.ainvoke({
-                "input": message
+            result = agent.invoke({
+                "messages": [{"role": "user", "content": message}]
             })
 
-            return result["output"]
+            # 提取最后一条消息的内容
+            last_message = result["messages"][-1]
+            if hasattr(last_message, "content"):
+                return last_message.content
+            else:
+                return str(last_message)
 
         except Exception as e:
             logger.error(f"Agent 处理失败: {e}", exc_info=True)
@@ -129,7 +115,7 @@ class ScheduleAgentService:
             AI 回复
         """
         try:
-            from langchain.schema import HumanMessage
+            from langchain_core.messages import HumanMessage
 
             messages = [HumanMessage(content=message)]
             response = await self.llm.ainvoke(messages)
