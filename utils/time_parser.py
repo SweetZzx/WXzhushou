@@ -66,12 +66,22 @@ class TimeParser:
                 year, month, day, hour, minute = map(int, match.groups())
                 return datetime(year, month, day, hour, minute)
 
-            # 2. 处理相对时间
+            # 2. 处理相对时间（带日期关键词）
             result = TimeParser._parse_relative_time(time_str, reference_time)
             if result:
                 return result
 
-            # 3. 使用 dateparser 解析
+            # 3. 尝试提取纯时间（如 "下午六点"、"3点"），默认使用今天
+            time_part = TimeParser._extract_time(time_str)
+            if time_part:
+                hour, minute = time_part
+                result = reference_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                # 如果时间已过，则设为明天
+                if result < reference_time:
+                    result += timedelta(days=1)
+                return result
+
+            # 4. 使用 dateparser 解析
             settings = {
                 "PREFER_DATES_FROM": "future",
                 "RELATIVE_BASE": reference_time,
@@ -128,21 +138,36 @@ class TimeParser:
 
         return None
 
+    # 中文数字映射
+    CHINESE_NUMBERS = {
+        "零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+        "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+        "十一": 11, "十二": 12, "十三": 13, "十四": 14, "十五": 15,
+        "十六": 16, "十七": 17, "十八": 18, "十九": 19, "二十": 20,
+        "二十一": 21, "二十二": 22, "二十三": 23, "二十四": 24,
+    }
+
     @staticmethod
     def _extract_time(time_str: str) -> Optional[Tuple[int, int]]:
         """从字符串中提取时间（小时和分钟）"""
+        # 先尝试转换中文数字
+        converted_str = time_str
+        for cn_num, ar_num in TimeParser.CHINESE_NUMBERS.items():
+            converted_str = converted_str.replace(cn_num, str(ar_num))
+
         # 匹配 "3点"、"15点"、"下午3点"、"15:30" 等格式
         patterns = [
             r"(\d{1,2})点(\d{1,2})分?",  # 3点、3点30、15点
             r"(\d{1,2}):(\d{2})",  # 15:30
             r"(\d{1,2})\.(\d{2})",  # 15.30
+            r"(\d{1,2})点",  # 6点、15点（无分钟）
         ]
 
         for pattern in patterns:
-            match = re.search(pattern, time_str)
+            match = re.search(pattern, converted_str)
             if match:
                 hour = int(match.group(1))
-                minute = int(match.group(2)) if len(match.groups()) > 1 else 0
+                minute = int(match.group(2)) if len(match.groups()) > 1 and match.group(2) else 0
 
                 # 处理上午/下午
                 if "下午" in time_str or "晚上" in time_str:
