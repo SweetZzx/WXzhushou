@@ -48,7 +48,7 @@ class ScheduleAgentService:
 - 不要主动推销日程功能
 - 请用中文回复"""
 
-    def __init__(self, zhipu_api_key: str, model: str = "glm-4"):
+    def __init__(self, zhipu_api_key: str, model: str = "glm-5"):
         """
         初始化 Agent 服务
 
