@@ -1,70 +1,92 @@
 """
 Agent 服务
 使用智谱 zhipuai SDK 实现 Agent 功能
+使用 LangChain 记忆模块管理对话历史
 """
 from zhipuai import ZhipuAI
 import json
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-from collections import deque
+
+from langchain.memory import ConversationBufferWindowMemory
+from langchain.schema import HumanMessage, AIMessage, SystemMessage
 
 from services.schedule_service import ScheduleService
 
 logger = logging.getLogger(__name__)
 
 
-class ConversationMemory:
-    """会话记忆管理器 - 为每个用户保存对话历史"""
+class LangChainConversationMemory:
+    """
+    基于 LangChain 的会话记忆管理器
+    为每个用户维护独立的对话历史
+    """
 
-    def __init__(self, max_history: int = 10):
+    def __init__(self, max_history: int = 8):
         """
         Args:
-            max_history: 最多保留多少轮对话（用户+助手=1轮）
+            max_history: 最多保留多少轮对话
         """
         self.max_history = max_history
-        self._conversations: Dict[str, deque] = {}  # {user_id: deque of messages}
+        self._memories: Dict[str, ConversationBufferWindowMemory] = {}
 
-    def get_history(self, user_id: str) -> List[dict]:
-        """获取用户的对话历史"""
-        if user_id not in self._conversations:
-            self._conversations[user_id] = deque(maxlen=self.max_history * 2)
-        return list(self._conversations[user_id])
+    def _get_memory(self, user_id: str) -> ConversationBufferWindowMemory:
+        """获取或创建用户的记忆实例"""
+        if user_id not in self._memories:
+            self._memories[user_id] = ConversationBufferWindowMemory(
+                k=self.max_history,
+                return_messages=True,
+                memory_key="chat_history"
+            )
+        return self._memories[user_id]
 
-    def add_message(self, user_id: str, role: str, content: str):
-        """添加一条消息到历史"""
-        if user_id not in self._conversations:
-            self._conversations[user_id] = deque(maxlen=self.max_history * 2)
-        self._conversations[user_id].append({"role": role, "content": content})
+    def get_history_messages(self, user_id: str) -> List[dict]:
+        """
+        获取用户的对话历史，转换为 OpenAI 格式的消息列表
+        """
+        memory = self._get_memory(user_id)
+        messages = memory.chat_memory.messages
+
+        result = []
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                result.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, AIMessage):
+                result.append({"role": "assistant", "content": msg.content})
+            elif isinstance(msg, SystemMessage):
+                result.append({"role": "system", "content": msg.content})
+
+        return result
+
+    def add_user_message(self, user_id: str, content: str):
+        """添加用户消息"""
+        memory = self._get_memory(user_id)
+        memory.chat_memory.add_user_message(content)
+
+    def add_ai_message(self, user_id: str, content: str):
+        """添加 AI 消息"""
+        memory = self._get_memory(user_id)
+        memory.chat_memory.add_ai_message(content)
 
     def clear_history(self, user_id: str):
         """清除用户的对话历史"""
-        if user_id in self._conversations:
-            self._conversations[user_id].clear()
+        if user_id in self._memories:
+            self._memories[user_id].clear()
 
-    def add_tool_call(self, user_id: str, assistant_content: str, tool_calls: list):
-        """添加工具调用记录（包含 tool_calls 的 assistant 消息）"""
-        if user_id not in self._conversations:
-            self._conversations[user_id] = deque(maxlen=self.max_history * 2)
-        self._conversations[user_id].append({
-            "role": "assistant",
-            "content": assistant_content or "",
-            "tool_calls": tool_calls
-        })
-
-    def add_tool_result(self, user_id: str, tool_call_id: str, result: str):
-        """添加工具执行结果"""
-        if user_id not in self._conversations:
-            self._conversations[user_id] = deque(maxlen=self.max_history * 2)
-        self._conversations[user_id].append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": result
-        })
+    def get_memory_stats(self, user_id: str) -> dict:
+        """获取记忆统计信息"""
+        memory = self._get_memory(user_id)
+        messages = memory.chat_memory.messages
+        return {
+            "total_messages": len(messages),
+            "max_window": self.max_history,
+            "has_memory": len(messages) > 0
+        }
 
 
-# 全局会话记忆实例
-conversation_memory = ConversationMemory(max_history=8)
+# 全局会话记忆实例（基于 LangChain）
+conversation_memory = LangChainConversationMemory(max_history=8)
 
 
 class ScheduleAgentService:
@@ -573,7 +595,7 @@ AI调用：create_schedule(title="睡觉", datetime="2026-02-15 22:00")
         return f"未知工具: {tool_name}"
 
     async def process(self, message: str, user_id: str, db_session) -> str:
-        """处理用户消息（带对话历史记忆）"""
+        """处理用户消息（使用 LangChain 记忆模块管理对话历史）"""
         try:
             schedule_service = ScheduleService(db_session)
             tools = self._build_tools()
@@ -581,15 +603,15 @@ AI调用：create_schedule(title="睡觉", datetime="2026-02-15 22:00")
             # 构建消息列表：系统提示 + 历史对话 + 当前消息
             messages = [{"role": "system", "content": self.SYSTEM_PROMPT}]
 
-            # 获取对话历史
-            history = conversation_memory.get_history(user_id)
+            # 获取 LangChain 管理的对话历史
+            history = conversation_memory.get_history_messages(user_id)
             messages.extend(history)
 
             # 添加当前用户消息
             messages.append({"role": "user", "content": message})
 
-            # 记录用户消息到历史
-            conversation_memory.add_message(user_id, "user", message)
+            # 使用 LangChain 记录用户消息
+            conversation_memory.add_user_message(user_id, message)
 
             max_iterations = 5
             final_response = None
@@ -647,8 +669,8 @@ AI调用：create_schedule(title="睡觉", datetime="2026-02-15 22:00")
 
             # 返回结果
             if final_response:
-                # 记录助手回复到历史
-                conversation_memory.add_message(user_id, "assistant", final_response)
+                # 使用 LangChain 记录助手回复
+                conversation_memory.add_ai_message(user_id, final_response)
                 return final_response
 
             return "抱歉，处理您的请求时超出了最大迭代次数。"
