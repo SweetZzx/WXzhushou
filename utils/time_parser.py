@@ -1,6 +1,10 @@
 """
 时间解析工具
 支持中文自然语言时间表达式解析
+
+参考资源：
+- JioNLP 时间语义解析: https://github.com/dongrixinyu/JioNLP/wiki/时间语义解析-说明文档
+- 中文时间表达: https://talkpal.ai/vocabulary/汉语时间相关词汇/
 """
 from datetime import datetime, timedelta
 import dateparser
@@ -12,31 +16,98 @@ logger = logging.getLogger(__name__)
 
 
 class TimeParser:
-    """时间解析器"""
+    """时间解析器 - 支持丰富的中文时间表达"""
 
-    # 中文时间关键词映射
-    TIME_KEYWORDS = {
+    # ============================================
+    # 日期关键词映射
+    # ============================================
+    DATE_KEYWORDS = {
+        # 相对日期
+        "大前天": -3,
+        "前天": -2,
+        "昨天": -1,
         "今天": 0,
+        "明日": 1,
         "明天": 1,
         "后天": 2,
         "大后天": 3,
-        "本周": "this_week",
-        "下周": "next_week",
-        "这周": "this_week",
-        "上周": "last_week",
+        # 月
+        "上个月": "last_month",
         "这个月": "this_month",
+        "本月": "this_month",
         "下个月": "next_month",
+        # 年
+        "去年": "last_year",
+        "今年": "this_year",
+        "明年": "next_year",
     }
 
-    # 时间段映射
+    # 周前缀（用于周几匹配）
+    WEEK_PREFIXES = {
+        "上上周": -14,
+        "上周": -7,
+        "这周": 0,
+        "本周": 0,
+        "下周": 7,
+        "下下周": 14,
+    }
+
+    # 星期映射
+    WEEKDAY_MAP = {
+        "周一": 0, "星期一": 0, "礼拜一": 0,
+        "周二": 1, "星期二": 1, "礼拜二": 1,
+        "周三": 2, "星期三": 2, "礼拜三": 2,
+        "周四": 3, "星期四": 3, "礼拜四": 3,
+        "周五": 4, "星期五": 4, "礼拜五": 4,
+        "周六": 5, "星期六": 5, "礼拜六": 5,
+        "周天": 6, "周日": 6, "星期日": 6, "礼拜日": 6, "星期天": 6,
+    }
+
+    # 时间段映射（默认小时）
     TIME_PERIODS = {
-        "上午": "morning",
-        "下午": "afternoon",
-        "早上": "morning",
-        "晚上": "evening",
-        "中午": "noon",
-        "半夜": "midnight",
-        "凌晨": "early_morning",
+        "凌晨": (0, 5),      # 0-5点
+        "早上": (6, 8),      # 6-8点
+        "上午": (9, 11),     # 9-11点
+        "中午": (12, 13),    # 12-13点
+        "下午": (14, 17),    # 14-17点
+        "傍晚": (18, 19),    # 18-19点
+        "晚上": (19, 22),    # 19-22点
+        "半夜": (23, 1),     # 23-1点
+        "深夜": (23, 2),     # 23-2点
+    }
+
+    # 中文数字映射（按长度降序处理，确保复合数字优先匹配）
+    CHINESE_NUMBERS = {
+        # 基本数字
+        "零": 0, "〇": 0,
+        "一": 1, "壹": 1,
+        "二": 2, "贰": 2, "两": 2,
+        "三": 3, "叁": 3,
+        "四": 4, "肆": 4,
+        "五": 5, "伍": 5,
+        "六": 6, "陆": 6,
+        "七": 7, "柒": 7,
+        "八": 8, "捌": 8,
+        "九": 9, "玖": 9,
+        "十": 10, "拾": 10,
+        # 11-19
+        "十一": 11, "十二": 12, "十三": 13, "十四": 14, "十五": 15,
+        "十六": 16, "十七": 17, "十八": 18, "十九": 19,
+        # 20-29
+        "二十": 20, "二十一": 21, "二十二": 22, "二十三": 23, "二十四": 24,
+        "二十五": 25, "二十六": 26, "二十七": 27, "二十八": 28, "二十九": 29,
+        # 30-39
+        "三十": 30, "三十一": 31, "三十二": 32, "三十三": 33, "三十四": 34,
+        "三十五": 35, "三十六": 36, "三十七": 37, "三十八": 38, "三十九": 39,
+        # 40-49
+        "四十": 40, "四十一": 41, "四十二": 42, "四十三": 43, "四十四": 44,
+        "四十五": 45, "四十六": 46, "四十七": 47, "四十八": 48, "四十九": 49,
+        # 50-59
+        "五十": 50, "五十一": 51, "五十二": 52, "五十三": 53, "五十四": 54,
+        "五十五": 55, "五十六": 56, "五十七": 57, "五十八": 58, "五十九": 59,
+        # 廿（二十的简写）
+        "廿": 20, "廿一": 21, "廿二": 22, "廿三": 23, "廿四": 24,
+        "廿五": 25, "廿六": 26, "廿七": 27, "廿八": 28, "廿九": 29,
     }
 
     @staticmethod
@@ -45,7 +116,12 @@ class TimeParser:
         解析时间字符串
 
         Args:
-            time_str: 时间字符串，如 "明天下午3点"、"2024-02-12 15:00"
+            time_str: 时间字符串，支持格式：
+                      - ISO格式: "2024-02-12 15:00"
+                      - 相对日期: "今天"、"明天"、"后天"、"大后天"
+                      - 周相关: "这周五"、"下周三"、"下下周一"
+                      - 时间点: "下午三点"、"晚上十点"、"凌晨2点"
+                      - 组合: "明天下午三点"、"后天晚上十点"
             reference_time: 参考时间，默认为当前时间
 
         Returns:
@@ -57,37 +133,32 @@ class TimeParser:
         if not time_str or not time_str.strip():
             return None
 
+        time_str = time_str.strip()
+
         try:
-            # 1. 先尝试直接解析标准格式
-            # 处理 "2024-02-12 15:00" 格式
+            # 1. 优先解析ISO格式 "2024-02-12 15:00"
             standard_pattern = r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})"
             match = re.match(standard_pattern, time_str)
             if match:
                 year, month, day, hour, minute = map(int, match.groups())
-                return datetime(year, month, day, hour, minute)
+                result = datetime(year, month, day, hour, minute)
+                logger.info(f"ISO格式解析成功: '{time_str}' -> {result}")
+                return result
 
-            # 2. 处理相对时间（带日期关键词）
-            result = TimeParser._parse_relative_time(time_str, reference_time)
+            # 2. 解析带日期关键词的复杂时间表达式
+            result = TimeParser._parse_complex_time(time_str, reference_time)
             if result:
+                logger.info(f"复杂时间解析成功: '{time_str}' -> {result}")
                 return result
 
-            # 3. 尝试提取纯时间（如 "下午六点"、"3点"），默认使用今天
-            time_part = TimeParser._extract_time(time_str)
-            if time_part:
-                hour, minute = time_part
-                result = reference_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                # 如果时间已过，则设为明天
-                if result < reference_time:
-                    result += timedelta(days=1)
-                return result
-
-            # 4. 使用 dateparser 解析
+            # 3. 使用 dateparser 作为最后的fallback
             settings = {
                 "PREFER_DATES_FROM": "future",
                 "RELATIVE_BASE": reference_time,
             }
             result = dateparser.parse(time_str, languages=["zh"], settings=settings)
             if result:
+                logger.info(f"dateparser解析成功: '{time_str}' -> {result}")
                 return result
 
             logger.warning(f"无法解析时间字符串: {time_str}")
@@ -98,86 +169,190 @@ class TimeParser:
             return None
 
     @staticmethod
-    def _parse_relative_time(time_str: str, reference_time: datetime) -> Optional[datetime]:
-        """解析相对时间表达式"""
-        # 检查是否包含日期关键词
-        for keyword, value in TimeParser.TIME_KEYWORDS.items():
-            if keyword in time_str:
-                if isinstance(value, int):
-                    # "明天"、"后天" 等
-                    base_date = reference_time + timedelta(days=value)
-                elif value == "this_week":
-                    # 本周（下周一）
-                    base_date = TimeParser._get_weekday(reference_time, 0)
-                elif value == "next_week":
-                    # 下周一
-                    base_date = TimeParser._get_weekday(reference_time, 7)
-                elif value == "last_week":
-                    # 上周一
-                    base_date = TimeParser._get_weekday(reference_time, -7)
-                elif value == "this_month":
-                    # 本月1号
-                    base_date = reference_time.replace(day=1)
-                elif value == "next_month":
-                    # 下月1号
-                    if reference_time.month == 12:
-                        base_date = reference_time.replace(year=reference_time.year + 1, month=1, day=1)
-                    else:
-                        base_date = reference_time.replace(month=reference_time.month + 1, day=1)
-                else:
-                    base_date = reference_time
+    def _parse_complex_time(time_str: str, reference_time: datetime) -> Optional[datetime]:
+        """解析复杂的时间表达式"""
+        # 先提取日期部分（使用原始文本，避免数字转换破坏周几匹配）
+        date_result = TimeParser._extract_date(time_str, reference_time)
+        if date_result is None:
+            date_result = reference_time
 
-                # 解析时间部分
-                time_part = TimeParser._extract_time(time_str)
-                if time_part:
-                    hour, minute = time_part
-                    return base_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                else:
-                    # 没有具体时间，默认为早上9点
-                    return base_date.replace(hour=9, minute=0, second=0, microsecond=0)
+        # 转换中文数字（用于时间解析）
+        converted = TimeParser._convert_chinese_numbers(time_str)
+
+        # 提取时间部分
+        time_result = TimeParser._extract_time(converted, time_str)
+
+        if time_result:
+            hour, minute = time_result
+            result = date_result.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # 如果只提取了时间没有日期，且时间已过，则设为明天
+            if date_result.date() == reference_time.date() and result < reference_time:
+                # 检查是否有明确的日期关键词
+                has_date_keyword = any(kw in time_str for kw in TimeParser.DATE_KEYWORDS.keys())
+                if not has_date_keyword:
+                    result += timedelta(days=1)
+
+            return result
+
+        # 只有日期没有时间，默认9点
+        if date_result.date() != reference_time.date():
+            return date_result.replace(hour=9, minute=0, second=0, microsecond=0)
 
         return None
 
-    # 中文数字映射
-    CHINESE_NUMBERS = {
-        "零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
-        "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
-        "十一": 11, "十二": 12, "十三": 13, "十四": 14, "十五": 15,
-        "十六": 16, "十七": 17, "十八": 18, "十九": 19, "二十": 20,
-        "二十一": 21, "二十二": 22, "二十三": 23, "二十四": 24,
-    }
+    @staticmethod
+    def _convert_chinese_numbers(text: str) -> str:
+        """将中文数字转换为阿拉伯数字"""
+        result = text
+        # 按长度降序排列，避免"十一"被替换成"11"后又替换"一"
+        sorted_numbers = sorted(TimeParser.CHINESE_NUMBERS.items(), key=lambda x: -len(x[0]))
+        for cn_num, ar_num in sorted_numbers:
+            result = result.replace(cn_num, str(ar_num))
+
+        # 处理"半"的情况
+        if "半" in result:
+            result = result.replace("半", "30")
+
+        # 处理"刻"的情况 (一刻=15, 半刻=7.5≈8, 三刻=45)
+        result = re.sub(r'(\d+)点一刻', r'\1点15', result)
+        result = re.sub(r'(\d+)点三刻', r'\1点45', result)
+
+        return result
 
     @staticmethod
-    def _extract_time(time_str: str) -> Optional[Tuple[int, int]]:
-        """从字符串中提取时间（小时和分钟）"""
-        # 先尝试转换中文数字
-        converted_str = time_str
-        for cn_num, ar_num in TimeParser.CHINESE_NUMBERS.items():
-            converted_str = converted_str.replace(cn_num, str(ar_num))
+    def _extract_date(text: str, reference_time: datetime) -> Optional[datetime]:
+        """从文本中提取日期"""
+        original_text = text
 
-        # 处理"半"的情况（如"三点半" -> "3点半" -> "3点30"）
-        if "半" in converted_str:
-            converted_str = converted_str.replace("半", "30")
+        # 0. 检查"X号"或"X日"格式（本月某天）- 最优先
+        day_pattern = r'(\d{1,2})[号日]'
+        day_match = re.search(day_pattern, original_text)
+        if day_match:
+            target_day = int(day_match.group(1))
+            # 验证日期有效性
+            if 1 <= target_day <= 31:
+                # 先尝试当月
+                try:
+                    result = reference_time.replace(day=target_day)
+                    # 如果日期已过，尝试下个月
+                    if result.date() < reference_time.date():
+                        # 切换到下个月
+                        if reference_time.month == 12:
+                            result = result.replace(year=reference_time.year + 1, month=1)
+                        else:
+                            result = result.replace(month=reference_time.month + 1)
+                    logger.info(f"日期号解析: {target_day}号 -> {result.date()}")
+                    return result
+                except ValueError:
+                    # 日期无效（如2月30日），尝试下个月
+                    pass
 
-        # 匹配 "3点"、"15点"、"下午3点"、"15:30"、"3点半" 等格式
+        # 1. 优先检查周几（这周五、下周三、下下周一等）- 必须在基本关键词之前
+        week_pattern = r'(下下周|下周|这周|本周|上上周|上周)?(周[一二三四五六七日天]|星期[一二三四五六七日天]|礼拜[一二三四五六七日天])'
+        match = re.search(week_pattern, original_text)
+        if match:
+            week_prefix = match.group(1) or ""
+            weekday_text = match.group(2)
+
+            # 获取目标星期几
+            target_weekday = None
+            for wd_name, wd_num in TimeParser.WEEKDAY_MAP.items():
+                if wd_name in weekday_text:
+                    target_weekday = wd_num
+                    break
+
+            if target_weekday is not None:
+                current_weekday = reference_time.weekday()
+
+                if week_prefix == "":
+                    # 没有前缀，默认这周
+                    days_diff = target_weekday - current_weekday
+                    if days_diff < 0:
+                        days_diff += 7  # 如果已过，则为下周
+                    return reference_time + timedelta(days=days_diff)
+                elif week_prefix in ["这周", "本周"]:
+                    # 这周
+                    days_diff = target_weekday - current_weekday
+                    if days_diff < 0:
+                        days_diff += 7
+                    return reference_time + timedelta(days=days_diff)
+                elif week_prefix == "下周":
+                    # 下周
+                    days_until_sunday = 6 - current_weekday
+                    days_to_target = days_until_sunday + 1 + target_weekday
+                    return reference_time + timedelta(days=days_to_target)
+                elif week_prefix == "下下周":
+                    # 下下周
+                    days_until_sunday = 6 - current_weekday
+                    days_to_target = days_until_sunday + 1 + 7 + target_weekday
+                    return reference_time + timedelta(days=days_to_target)
+                elif week_prefix == "上周":
+                    # 上周
+                    days_since_monday = current_weekday
+                    days_to_target = -(days_since_monday + 7 - target_weekday)
+                    return reference_time + timedelta(days=days_to_target)
+                elif week_prefix == "上上周":
+                    # 上上周
+                    days_since_monday = current_weekday
+                    days_to_target = -(days_since_monday + 14 - target_weekday)
+                    return reference_time + timedelta(days=days_to_target)
+
+        # 2. 检查基本日期关键词
+        for keyword, value in TimeParser.DATE_KEYWORDS.items():
+            if keyword in text:
+                if isinstance(value, int):
+                    return reference_time + timedelta(days=value)
+                elif value == "last_month":
+                    # 上个月1号
+                    if reference_time.month == 1:
+                        return reference_time.replace(year=reference_time.year - 1, month=12, day=1)
+                    return reference_time.replace(month=reference_time.month - 1, day=1)
+                elif value == "this_month":
+                    return reference_time.replace(day=1)
+                elif value == "next_month":
+                    if reference_time.month == 12:
+                        return reference_time.replace(year=reference_time.year + 1, month=1, day=1)
+                    return reference_time.replace(month=reference_time.month + 1, day=1)
+                elif value == "last_year":
+                    return reference_time.replace(year=reference_time.year - 1, month=1, day=1)
+                elif value == "this_year":
+                    return reference_time.replace(month=1, day=1)
+                elif value == "next_year":
+                    return reference_time.replace(year=reference_time.year + 1, month=1, day=1)
+
+        return None
+
+    @staticmethod
+    def _extract_time(converted_text: str, original_text: str) -> Optional[Tuple[int, int]]:
+        """从文本中提取时间（小时和分钟）"""
+        # 时间匹配模式
         patterns = [
-            r"(\d{1,2})点(\d{1,2})分?",  # 3点30、15点30
-            r"(\d{1,2}):(\d{2})",  # 15:30
-            r"(\d{1,2})\.(\d{2})",  # 15.30
-            r"(\d{1,2})点",  # 6点、15点（无分钟）
+            r'(\d{1,2})点(\d{1,2})分?',     # 3点30、15点30分
+            r'(\d{1,2}):(\d{2})',           # 15:30
+            r'(\d{1,2})\.(\d{2})',          # 15.30
+            r'(\d{1,2})点',                 # 6点、15点（无分钟）
         ]
 
         for pattern in patterns:
-            match = re.search(pattern, converted_str)
+            match = re.search(pattern, converted_text)
             if match:
                 hour = int(match.group(1))
                 minute = int(match.group(2)) if len(match.groups()) > 1 and match.group(2) else 0
 
-                # 处理上午/下午
-                if "下午" in time_str or "晚上" in time_str:
+                # 处理时间段（上午/下午/晚上等）
+                if "下午" in original_text or "晚上" in original_text or "傍晚" in original_text or "深夜" in original_text:
                     if hour < 12:
                         hour += 12
-                elif "上午" in time_str or "早上" in time_str or "凌晨" in time_str:
+                elif "中午" in original_text:
+                    # 中午默认是12点
+                    if hour < 12:
+                        hour = 12
+                elif "半夜" in original_text or "凌晨" in original_text:
+                    # 半夜和凌晨不转换
+                    pass
+                elif "上午" in original_text or "早上" in original_text:
+                    # 上午保持不变，但如果>=12则可能是错误
                     if hour >= 12:
                         hour -= 12
 
@@ -185,38 +360,23 @@ class TimeParser:
                 if 0 <= hour <= 23 and 0 <= minute <= 59:
                     return (hour, minute)
 
+        # 特殊时间点处理
+        if "中午" in original_text and not re.search(r'\d+点', converted_text):
+            return (12, 0)
+        if "半夜" in original_text or "子夜" in original_text:
+            return (0, 0)
+        if "黄昏" in original_text or "傍晚" in original_text:
+            return (18, 0)
+
         return None
 
     @staticmethod
-    def _get_weekday(reference_time: datetime, offset: int) -> datetime:
-        """获取指定偏移量的周一"""
-        days_since_monday = reference_time.weekday()
-        monday = reference_time - timedelta(days=days_since_monday)
-        target_monday = monday + timedelta(days=offset)
-        return target_monday
-
-    @staticmethod
     def format_time(dt: datetime) -> str:
-        """格式化时间显示"""
-        now = datetime.now()
-        delta = dt - now
+        """格式化时间显示 - 始终显示具体日期"""
+        weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
-        if delta.days == 0:
-            # 今天
-            return f"今天 {dt.strftime('%H:%M')}"
-        elif delta.days == 1:
-            # 明天
-            return f"明天 {dt.strftime('%H:%M')}"
-        elif delta.days == 2:
-            # 后天
-            return f"后天 {dt.strftime('%H:%M')}"
-        elif 0 < delta.days <= 7:
-            # 本周
-            weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-            return f"{weekdays[dt.weekday()]} {dt.strftime('%H:%M')}"
-        else:
-            # 具体日期
-            return dt.strftime("%Y-%m-%d %H:%M")
+        # 格式: 2月19日 周三 15:00
+        return f"{dt.month}月{dt.day}日 {weekdays[dt.weekday()]} {dt.strftime('%H:%M')}"
 
 
 # 便捷函数

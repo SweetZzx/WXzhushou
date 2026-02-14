@@ -108,6 +108,28 @@ class ScheduleAgentService:
 2. 等待返回的ISO格式时间（如 "2026-02-14 15:00"）
 3. 使用返回的ISO时间调用 create_schedule
 
+【⚠️ 多日程处理】
+用户一次说多个日程时，要逐个处理，每个日程都要：
+1. 先调用 parse_time_to_iso 解析该日程的时间
+2. 等待返回结果
+3. 再调用 create_schedule 创建该日程
+4. 然后处理下一个日程
+
+示例：
+用户：22号回家，24号打针
+处理流程：
+1. parse_time_to_iso(natural_time="22号") → 得到日期
+2. create_schedule(title="回家", datetime=返回的日期)
+3. parse_time_to_iso(natural_time="24号") → 得到日期
+4. create_schedule(title="打针", datetime=返回的日期)
+5. 回复用户：已为您添加2个日程
+
+【⚠️ 时间解析规则】
+- "22号" = 本月22号
+- "下周三" = 下一个周三
+- 如果没有指定时间，默认为当天 09:00
+- parse_time_to_iso 会返回完整的 YYYY-MM-DD HH:MM 格式
+
 【示例对话流程】
 用户：添加日程，后天晚上十点睡觉
 AI内心：需要先解析时间
@@ -146,6 +168,7 @@ AI调用：create_schedule(title="睡觉", datetime="2026-02-15 22:00")
 【⚠️ 禁止事项】
 - 禁止直接将自然语言传给 create_schedule/update_schedule 的 datetime 参数
 - 禁止自己猜测日期，必须调用 parse_time_to_iso 获取准确时间
+- 禁止说"无法处理多个日程"，必须逐个处理
 
 【重要】
 - 闲聊、问候、知识问答等不调用工具，直接对话
@@ -617,7 +640,8 @@ AI调用：create_schedule(title="睡觉", datetime="2026-02-15 22:00")
             # 使用 LangChain 记录用户消息
             conversation_memory.add_user_message(user_id, message)
 
-            max_iterations = 5
+            # 增加迭代次数以支持多日程处理（每个日程需要2次调用：解析时间+创建）
+            max_iterations = 12
             final_response = None
 
             for iteration in range(max_iterations):
