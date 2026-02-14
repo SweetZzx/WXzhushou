@@ -9,8 +9,9 @@ import hashlib
 import logging
 
 from config import WECHAT_TOKEN, WECHAT_MODE, ZHIPU_API_KEY
-from services.wechat_service import WeChatService
+from services.wechat_service import WeChatService, media_service
 from services.agent_service import ScheduleAgentService
+from services.asr_service import ASRService
 from database.session import get_db
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ router = APIRouter()
 # 初始化服务
 wechat_service = WeChatService()
 agent_service = ScheduleAgentService(zhipu_api_key=ZHIPU_API_KEY)
+asr_service = ASRService()
 
 
 class XMLResponse:
@@ -106,20 +108,49 @@ async def wechat_message(request: Request, db = Depends(get_db)):
 
         logger.info(f"消息类型: {msg_type}, 发送者: {from_user}, 内容: {content}")
 
-        # 只处理文本消息
-        if msg_type != "text":
-            logger.info(f"暂不支持的消息类型: {msg_type}")
-            xml_response = wechat_service.create_response_xml("暂不支持此类型消息", from_user, to_user)
+        # 处理文本消息
+        if msg_type == "text":
+            # 调用Agent获取回复
+            ai_response = await agent_service.process(content, from_user, db)
+            logger.info(f"AI回复: {ai_response}")
+            xml_response = wechat_service.create_response_xml(ai_response, from_user, to_user)
             return Response(content=xml_response, media_type="application/xml")
 
-        # 调用Agent获取回复
-        ai_response = await agent_service.process(content, from_user, db)
+        # 处理语音消息
+        elif msg_type == "voice":
+            media_id = message.get("MediaId", "")
+            if not media_id:
+                logger.warning("语音消息缺少MediaId")
+                xml_response = wechat_service.create_response_xml("无法识别语音消息", from_user, to_user)
+                return Response(content=xml_response, media_type="application/xml")
 
-        logger.info(f"AI回复: {ai_response}")
+            logger.info(f"收到语音消息: media_id={media_id}")
 
-        # 返回XML格式的响应
-        xml_response = wechat_service.create_response_xml(ai_response, from_user, to_user)
-        return Response(content=xml_response, media_type="application/xml")
+            # 下载语音文件
+            audio_data = await media_service.download_media(media_id)
+            if not audio_data:
+                xml_response = wechat_service.create_response_xml("下载语音文件失败，请稍后重试", from_user, to_user)
+                return Response(content=xml_response, media_type="application/xml")
+
+            # 语音转文字
+            transcribed_text = await asr_service.transcribe(audio_data)
+            if not transcribed_text:
+                xml_response = wechat_service.create_response_xml("语音识别失败，请稍后重试", from_user, to_user)
+                return Response(content=xml_response, media_type="application/xml")
+
+            logger.info(f"语音识别结果: {transcribed_text}")
+
+            # 调用Agent处理识别后的文字
+            ai_response = await agent_service.process(transcribed_text, from_user, db)
+            logger.info(f"AI回复: {ai_response}")
+            xml_response = wechat_service.create_response_xml(ai_response, from_user, to_user)
+            return Response(content=xml_response, media_type="application/xml")
+
+        # 其他消息类型
+        else:
+            logger.info(f"暂不支持的消息类型: {msg_type}")
+            xml_response = wechat_service.create_response_xml("暂不支持此类型消息，请发送文字或语音", from_user, to_user)
+            return Response(content=xml_response, media_type="application/xml")
 
     except Exception as e:
         logger.error(f"处理微信消息时出错: {e}", exc_info=True)
