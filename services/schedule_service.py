@@ -208,6 +208,95 @@ class ScheduleService:
             await self.db.rollback()
             return False
 
+    async def find_schedules_by_keyword(
+        self,
+        user_id: str,
+        keyword: str,
+        date_str: Optional[str] = None
+    ) -> List[Schedule]:
+        """
+        通过关键词查找日程
+
+        Args:
+            user_id: 用户ID
+            keyword: 搜索关键词（匹配标题）
+            date_str: 日期筛选（可选）
+
+        Returns:
+            匹配的日程列表
+        """
+        try:
+            query = select(Schedule).where(
+                and_(
+                    Schedule.user_id == user_id,
+                    Schedule.status == "active",
+                    Schedule.title.contains(keyword)
+                )
+            )
+
+            # 时间筛选
+            if date_str:
+                start_time, end_time = self._parse_date_range(date_str)
+                if start_time and end_time:
+                    query = query.where(
+                        and_(
+                            Schedule.scheduled_time >= start_time,
+                            Schedule.scheduled_time < end_time
+                        )
+                    )
+
+            query = query.order_by(Schedule.scheduled_time)
+
+            result = await self.db.execute(query)
+            return result.scalars().all()
+
+        except Exception as e:
+            logger.error(f"搜索日程失败: {e}")
+            return []
+
+    async def shift_schedule_time(
+        self,
+        schedule_id: int,
+        user_id: str,
+        shift_minutes: int
+    ) -> Optional[Schedule]:
+        """
+        偏移日程时间
+
+        Args:
+            schedule_id: 日程ID
+            user_id: 用户ID
+            shift_minutes: 偏移分钟数（正数=推迟，负数=提前）
+
+        Returns:
+            更新后的日程
+        """
+        try:
+            schedule = await self.get_schedule(schedule_id, user_id)
+            if not schedule:
+                return None
+
+            new_time = schedule.scheduled_time + timedelta(minutes=shift_minutes)
+
+            # 验证新时间不能是过去
+            if new_time < datetime.now():
+                logger.warning(f"偏移后的时间不能是过去: {new_time}")
+                return None
+
+            schedule.scheduled_time = new_time
+            schedule.updated_at = datetime.utcnow()
+            await self.db.commit()
+            await self.db.refresh(schedule)
+
+            direction = "推迟" if shift_minutes > 0 else "提前"
+            logger.info(f"日程时间{direction}: id={schedule_id}, 偏移={shift_minutes}分钟")
+            return schedule
+
+        except Exception as e:
+            logger.error(f"偏移日程时间失败: {e}")
+            await self.db.rollback()
+            return None
+
     def _parse_date_range(self, date_str: str) -> tuple[Optional[datetime], Optional[datetime]]:
         """解析日期范围"""
         now = datetime.now()
@@ -242,8 +331,13 @@ class ScheduleService:
         return (None, None)
 
     def format_schedule(self, schedule: Schedule) -> str:
-        """格式化日程显示"""
+        """格式化日程显示 - 标准化格式"""
         time_str = format_time(schedule.scheduled_time)
-        desc = f"\n📝 {schedule.description}" if schedule.description else ""
 
-        return f"📅 {schedule.title}\n⏰ {time_str}{desc}"
+        result = f"📌 标题：{schedule.title}\n"
+        result += f"⏰ 时间：{time_str}"
+
+        if schedule.description:
+            result += f"\n📝 备注：{schedule.description}"
+
+        return result
