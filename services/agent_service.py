@@ -6,10 +6,65 @@ from zhipuai import ZhipuAI
 import json
 import logging
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+from collections import deque
 
 from services.schedule_service import ScheduleService
 
 logger = logging.getLogger(__name__)
+
+
+class ConversationMemory:
+    """会话记忆管理器 - 为每个用户保存对话历史"""
+
+    def __init__(self, max_history: int = 10):
+        """
+        Args:
+            max_history: 最多保留多少轮对话（用户+助手=1轮）
+        """
+        self.max_history = max_history
+        self._conversations: Dict[str, deque] = {}  # {user_id: deque of messages}
+
+    def get_history(self, user_id: str) -> List[dict]:
+        """获取用户的对话历史"""
+        if user_id not in self._conversations:
+            self._conversations[user_id] = deque(maxlen=self.max_history * 2)
+        return list(self._conversations[user_id])
+
+    def add_message(self, user_id: str, role: str, content: str):
+        """添加一条消息到历史"""
+        if user_id not in self._conversations:
+            self._conversations[user_id] = deque(maxlen=self.max_history * 2)
+        self._conversations[user_id].append({"role": role, "content": content})
+
+    def clear_history(self, user_id: str):
+        """清除用户的对话历史"""
+        if user_id in self._conversations:
+            self._conversations[user_id].clear()
+
+    def add_tool_call(self, user_id: str, assistant_content: str, tool_calls: list):
+        """添加工具调用记录（包含 tool_calls 的 assistant 消息）"""
+        if user_id not in self._conversations:
+            self._conversations[user_id] = deque(maxlen=self.max_history * 2)
+        self._conversations[user_id].append({
+            "role": "assistant",
+            "content": assistant_content or "",
+            "tool_calls": tool_calls
+        })
+
+    def add_tool_result(self, user_id: str, tool_call_id: str, result: str):
+        """添加工具执行结果"""
+        if user_id not in self._conversations:
+            self._conversations[user_id] = deque(maxlen=self.max_history * 2)
+        self._conversations[user_id].append({
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "content": result
+        })
+
+
+# 全局会话记忆实例
+conversation_memory = ConversationMemory(max_history=8)
 
 
 class ScheduleAgentService:
@@ -518,17 +573,28 @@ AI调用：create_schedule(title="睡觉", datetime="2026-02-15 22:00")
         return f"未知工具: {tool_name}"
 
     async def process(self, message: str, user_id: str, db_session) -> str:
-        """处理用户消息"""
+        """处理用户消息（带对话历史记忆）"""
         try:
             schedule_service = ScheduleService(db_session)
             tools = self._build_tools()
-            messages = [
-                {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": message}
-            ]
+
+            # 构建消息列表：系统提示 + 历史对话 + 当前消息
+            messages = [{"role": "system", "content": self.SYSTEM_PROMPT}]
+
+            # 获取对话历史
+            history = conversation_memory.get_history(user_id)
+            messages.extend(history)
+
+            # 添加当前用户消息
+            messages.append({"role": "user", "content": message})
+
+            # 记录用户消息到历史
+            conversation_memory.add_message(user_id, "user", message)
 
             max_iterations = 5
-            for _ in range(max_iterations):
+            final_response = None
+
+            for iteration in range(max_iterations):
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
@@ -540,25 +606,30 @@ AI调用：create_schedule(title="睡觉", datetime="2026-02-15 22:00")
                 assistant_message = response.choices[0].message
 
                 if not hasattr(assistant_message, 'tool_calls') or not assistant_message.tool_calls:
+                    # 没有工具调用，直接返回结果
                     content = assistant_message.content or "抱歉，我没有理解您的问题。"
-                    return content.strip()
+                    final_response = content.strip()
+                    break
 
+                # 有工具调用，记录带 tool_calls 的 assistant 消息
+                tool_calls_serialized = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    }
+                    for tc in assistant_message.tool_calls
+                ]
                 messages.append({
                     "role": "assistant",
                     "content": assistant_message.content or "",
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments
-                            }
-                        }
-                        for tc in assistant_message.tool_calls
-                    ]
+                    "tool_calls": tool_calls_serialized
                 })
 
+                # 执行工具调用
                 for tool_call in assistant_message.tool_calls:
                     function_name = tool_call.function.name
                     function_args = json.loads(tool_call.function.arguments)
@@ -573,6 +644,12 @@ AI调用：create_schedule(title="睡觉", datetime="2026-02-15 22:00")
                         "tool_call_id": tool_call.id,
                         "content": result
                     })
+
+            # 返回结果
+            if final_response:
+                # 记录助手回复到历史
+                conversation_memory.add_message(user_id, "assistant", final_response)
+                return final_response
 
             return "抱歉，处理您的请求时超出了最大迭代次数。"
 
