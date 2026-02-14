@@ -9,8 +9,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-from langchain.memory import ConversationBufferWindowMemory
-from langchain.schema import HumanMessage, AIMessage, SystemMessage
+# LangChain 记忆模块（1.0+ 版本）
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from services.schedule_service import ScheduleService
 
@@ -21,6 +22,7 @@ class LangChainConversationMemory:
     """
     基于 LangChain 的会话记忆管理器
     为每个用户维护独立的对话历史
+    使用 LangChain ChatMessageHistory 组件
     """
 
     def __init__(self, max_history: int = 8):
@@ -29,24 +31,26 @@ class LangChainConversationMemory:
             max_history: 最多保留多少轮对话
         """
         self.max_history = max_history
-        self._memories: Dict[str, ConversationBufferWindowMemory] = {}
+        self._memories: Dict[str, ChatMessageHistory] = {}
 
-    def _get_memory(self, user_id: str) -> ConversationBufferWindowMemory:
+    def _get_memory(self, user_id: str) -> ChatMessageHistory:
         """获取或创建用户的记忆实例"""
         if user_id not in self._memories:
-            self._memories[user_id] = ConversationBufferWindowMemory(
-                k=self.max_history,
-                return_messages=True,
-                memory_key="chat_history"
-            )
+            self._memories[user_id] = ChatMessageHistory()
         return self._memories[user_id]
 
     def get_history_messages(self, user_id: str) -> List[dict]:
         """
         获取用户的对话历史，转换为 OpenAI 格式的消息列表
+        自动截断到最近的 max_history 轮对话
         """
         memory = self._get_memory(user_id)
-        messages = memory.chat_memory.messages
+        messages = memory.messages
+
+        # 截断到最近的 max_history 轮（每轮 = 1 user + 1 assistant）
+        max_messages = self.max_history * 2
+        if len(messages) > max_messages:
+            messages = messages[-max_messages:]
 
         result = []
         for msg in messages:
@@ -62,12 +66,12 @@ class LangChainConversationMemory:
     def add_user_message(self, user_id: str, content: str):
         """添加用户消息"""
         memory = self._get_memory(user_id)
-        memory.chat_memory.add_user_message(content)
+        memory.add_user_message(content)
 
     def add_ai_message(self, user_id: str, content: str):
         """添加 AI 消息"""
         memory = self._get_memory(user_id)
-        memory.chat_memory.add_ai_message(content)
+        memory.add_ai_message(content)
 
     def clear_history(self, user_id: str):
         """清除用户的对话历史"""
@@ -77,7 +81,7 @@ class LangChainConversationMemory:
     def get_memory_stats(self, user_id: str) -> dict:
         """获取记忆统计信息"""
         memory = self._get_memory(user_id)
-        messages = memory.chat_memory.messages
+        messages = memory.messages
         return {
             "total_messages": len(messages),
             "max_window": self.max_history,
