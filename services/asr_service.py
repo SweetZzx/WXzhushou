@@ -46,22 +46,29 @@ class ASRService:
                         stream=False
                     )
 
-                # 解析响应
-                # 响应格式: {"choices": [{"message": {"content": "识别的文字"}}]}
+                logger.debug(f"ASR响应类型: {type(response)}, 内容: {response}")
+
+                # 解析响应 - 智谱ASR响应格式
                 text = None
-                for item in response:
-                    if hasattr(item, 'choices') and item.choices:
-                        text = item.choices[0].message.content
-                        break
-                    elif isinstance(item, dict) and 'choices' in item:
-                        text = item['choices'][0]['message']['content']
-                        break
+
+                # 方式1: 直接访问text属性（智谱ASR格式）
+                if hasattr(response, 'text') and response.text:
+                    text = response.text
+                # 方式2: 从segments中获取
+                elif hasattr(response, 'segments') and response.segments:
+                    text = ''.join(seg.get('text', '') for seg in response.segments)
+                # 方式3: 作为字典访问
+                elif isinstance(response, dict):
+                    if 'text' in response:
+                        text = response['text']
+                    elif 'segments' in response:
+                        text = ''.join(seg.get('text', '') for seg in response['segments'])
 
                 if text:
                     logger.info(f"语音识别成功: {text}")
                     return text
                 else:
-                    logger.warning("语音识别返回空结果")
+                    logger.warning(f"语音识别返回空结果, response: {response}")
                     return None
 
             finally:
