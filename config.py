@@ -19,10 +19,16 @@ WECHAT_MODE: str = os.getenv("WECHAT_MODE", "normal")  # normal: 明文模式, s
 # 智谱AI配置
 ZHIPU_API_KEY: str = os.getenv("ZHIPU_API_KEY", "")
 ZHIPU_API_URL: str = os.getenv("ZHIPU_API_URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions")
+ZHIPU_API_BASE: str = os.getenv("ZHIPU_API_BASE", "https://open.bigmodel.cn/api/paas/v4")
 ZHIPU_MODEL: str = os.getenv("ZHIPU_MODEL", "glm-4")
 ZHIPU_TEMPERATURE: float = float(os.getenv("ZHIPU_TEMPERATURE", "0.7"))
 ZHIPU_MAX_TOKENS: int = int(os.getenv("ZHIPU_MAX_TOKENS", "2000"))
 ZHIPU_TIMEOUT: int = int(os.getenv("ZHIPU_TIMEOUT", "30"))
+
+# LangChain 配置
+LANGCHAIN_MODEL: str = os.getenv("LANGCHAIN_MODEL", "glm-4")
+LANGCHAIN_TEMPERATURE: float = float(os.getenv("LANGCHAIN_TEMPERATURE", "0.7"))
+LANGCHAIN_MAX_TOKENS: int = int(os.getenv("LANGCHAIN_MAX_TOKENS", "2000"))
 
 # 服务器配置
 SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")

@@ -8,9 +8,9 @@ from typing import Optional
 import hashlib
 import logging
 
-from config import WECHAT_TOKEN, WECHAT_MODE, ZHIPU_API_KEY
+from config import WECHAT_TOKEN, WECHAT_MODE
 from services.wechat_service import WeChatService, media_service
-from services.agent_service import ScheduleAgentService
+from services.langchain_agent import langchain_agent
 from services.asr_service import ASRService
 from database.session import get_db
 
@@ -20,8 +20,8 @@ router = APIRouter()
 
 # 初始化服务
 wechat_service = WeChatService()
-agent_service = ScheduleAgentService(zhipu_api_key=ZHIPU_API_KEY)
 asr_service = ASRService()
+# langchain_agent 是全局单例，无需初始化
 
 
 class XMLResponse:
@@ -110,8 +110,8 @@ async def wechat_message(request: Request, db = Depends(get_db)):
 
         # 处理文本消息
         if msg_type == "text":
-            # 调用Agent获取回复
-            ai_response = await agent_service.process(content, from_user, db)
+            # 调用 LangChain Agent 获取回复
+            ai_response = await langchain_agent.process(content, from_user, db)
             logger.info(f"AI回复: {ai_response}")
             xml_response = wechat_service.create_response_xml(ai_response, from_user, to_user)
             return Response(content=xml_response, media_type="application/xml")
@@ -140,8 +140,8 @@ async def wechat_message(request: Request, db = Depends(get_db)):
 
             logger.info(f"语音识别结果: {transcribed_text}")
 
-            # 调用Agent处理识别后的文字
-            ai_response = await agent_service.process(transcribed_text, from_user, db)
+            # 调用 LangChain Agent 处理识别后的文字
+            ai_response = await langchain_agent.process(transcribed_text, from_user, db)
             logger.info(f"AI回复: {ai_response}")
             xml_response = wechat_service.create_response_xml(ai_response, from_user, to_user)
             return Response(content=xml_response, media_type="application/xml")
