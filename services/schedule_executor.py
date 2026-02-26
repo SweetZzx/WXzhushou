@@ -139,23 +139,34 @@ class ScheduleExecutor:
     async def _handle_query(self, action: ScheduleAction, user_id: str, db_session) -> str:
         """查询日程"""
         schedule_service = ScheduleService(db_session)
-        date_str = action.date or "今天"
 
-        schedules = await schedule_service.list_schedules(user_id=user_id, date_str=date_str)
+        # 判断是否查询所有日程
+        date_str = action.date or ""
+        query_all = not date_str or "所有" in date_str or "全部" in date_str or "所有日" in date_str
+
+        if query_all:
+            # 查询所有日程（不限制日期）
+            schedules = await schedule_service.list_schedules(user_id=user_id, date_str=None)
+            date_display = "所有"
+        else:
+            schedules = await schedule_service.list_schedules(user_id=user_id, date_str=date_str)
+            date_display = date_str
 
         if not schedules:
-            return f"📭 {date_str}没有日程安排"
+            return f"📭 {'目前还没有日程安排' if query_all else date_display + '没有日程安排'}"
 
         if len(schedules) == 1:
             s = schedules[0]
             time_str = s.scheduled_time.strftime("%m月%d日 %H:%M")
             weekday = WEEKDAYS[s.scheduled_time.weekday()]
-            return f"📅 {date_str}有1个日程：\n\n📌 {s.title}\n⏰ {time_str} ({weekday})"
+            return f"📅 {'目前' if query_all else date_display}有1个日程：\n\n📌 {s.title}\n⏰ {time_str} ({weekday})"
 
-        result = f"📅 {date_str}的日程（共{len(schedules)}个）：\n"
+        result = f"📅 {'你记录的所有日程' if query_all else date_display + '的日程'}（共{len(schedules)}个）：\n"
         for i, s in enumerate(schedules, 1):
-            time_str = s.scheduled_time.strftime("%H:%M")
-            result += f"\n{i}. {s.title} - {time_str}"
+            # 显示完整日期和时间
+            time_str = s.scheduled_time.strftime("%m月%d日 %H:%M")
+            weekday = WEEKDAYS[s.scheduled_time.weekday()]
+            result += f"\n{i}. {s.title} - {time_str} ({weekday})"
 
         return result
 
