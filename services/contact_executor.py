@@ -78,6 +78,8 @@ class ContactExecutor:
                 info_parts.append(f"🎂 {contact.birthday}")
             if contact.remark:
                 info_parts.append(f"📝 {contact.remark}")
+            if contact.extra:
+                info_parts.append(f"📋 {contact.extra}")
 
             if info_parts:
                 reply += "\n\n" + "\n".join(info_parts)
@@ -120,7 +122,7 @@ class ContactExecutor:
                 if info_parts:
                     reply += "\n\n" + "\n".join(info_parts)
                 else:
-                    reply += "\n\n暂无详细信息"
+                    reply += "\n\n💡 暂无详细信息，可以说「{action.name}的电话是xxx」来添加"
 
                 return reply
 

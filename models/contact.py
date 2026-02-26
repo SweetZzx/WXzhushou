@@ -1,15 +1,26 @@
 """
 联系人数据模型
 """
-from sqlalchemy import String, Integer, Text, Date, Index
+from sqlalchemy import String, Integer, Text, Index
 from sqlalchemy.orm import Mapped, mapped_column
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional
 from database.base import Base
 
 
 class Contact(Base):
-    """联系人表"""
+    """
+    联系人表
+
+    核心字段：
+    - name: 姓名（必须）
+    - phone: 电话（加密存储，可选但建议有）
+    - birthday: 生日 MM-DD 格式（可选但建议有）
+
+    扩展字段：
+    - remark: 备注（如：大学同学、前同事）
+    - extra: 其他信息（JSON格式，如：爱好、QQ、邮箱、地址等）
+    """
     __tablename__ = "contacts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -18,7 +29,7 @@ class Contact(Base):
     phone: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # 加密存储
     birthday: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # 格式: MM-DD
     remark: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 其他信息
+    extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON格式存储扩展信息
     created_at: Mapped[datetime] = mapped_column(String(50), default=lambda: datetime.now().isoformat())
     updated_at: Mapped[datetime] = mapped_column(String(50), default=lambda: datetime.now().isoformat())
 
