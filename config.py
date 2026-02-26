@@ -1,79 +1,89 @@
 """
 配置文件
-读取环境变量并提供配置项
+从环境变量读取配置，提供统一的配置访问
 """
 import os
-from typing import Optional
 from pathlib import Path
 
 # 项目根目录
 BASE_DIR = Path(__file__).parent
 
+# ============================================
 # 微信配置
+# ============================================
 WECHAT_APP_ID: str = os.getenv("WECHAT_APP_ID", "")
 WECHAT_APP_SECRET: str = os.getenv("WECHAT_APP_SECRET", "")
-WECHAT_TOKEN: str = os.getenv("WECHAT_TOKEN", "your_token_here")
+WECHAT_TOKEN: str = os.getenv("WECHAT_TOKEN", "")
 WECHAT_ENCODING_AES_KEY: str = os.getenv("WECHAT_ENCODING_AES_KEY", "")
-WECHAT_MODE: str = os.getenv("WECHAT_MODE", "normal")  # normal: 明文模式, safe: 安全模式
+WECHAT_MODE: str = os.getenv("WECHAT_MODE", "normal")
 
-# 智谱AI配置
+# ============================================
+# 智谱 AI 配置
+# ============================================
 ZHIPU_API_KEY: str = os.getenv("ZHIPU_API_KEY", "")
-ZHIPU_API_URL: str = os.getenv("ZHIPU_API_URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions")
 ZHIPU_API_BASE: str = os.getenv("ZHIPU_API_BASE", "https://open.bigmodel.cn/api/paas/v4")
-ZHIPU_MODEL: str = os.getenv("ZHIPU_MODEL", "glm-4")
+ZHIPU_MODEL: str = os.getenv("ZHIPU_MODEL", "glm-4-air")
 ZHIPU_TEMPERATURE: float = float(os.getenv("ZHIPU_TEMPERATURE", "0.7"))
 ZHIPU_MAX_TOKENS: int = int(os.getenv("ZHIPU_MAX_TOKENS", "2000"))
 ZHIPU_TIMEOUT: int = int(os.getenv("ZHIPU_TIMEOUT", "30"))
 
-# LangChain 配置
-LANGCHAIN_MODEL: str = os.getenv("LANGCHAIN_MODEL", "glm-4")
-LANGCHAIN_TEMPERATURE: float = float(os.getenv("LANGCHAIN_TEMPERATURE", "0.7"))
-LANGCHAIN_MAX_TOKENS: int = int(os.getenv("LANGCHAIN_MAX_TOKENS", "2000"))
+# ============================================
+# LangSmith 配置（追踪调试）
+# ============================================
+LANGCHAIN_TRACING_V2: bool = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+LANGCHAIN_API_KEY: str = os.getenv("LANGCHAIN_API_KEY", "")
+LANGCHAIN_PROJECT: str = os.getenv("LANGCHAIN_PROJECT", "wxzhushou")
 
+# ============================================
 # 服务器配置
+# ============================================
 SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")
 SERVER_PORT: int = int(os.getenv("SERVER_PORT", "8000"))
 SERVER_RELOAD: bool = os.getenv("SERVER_RELOAD", "false").lower() == "true"
 
-# 日志配置
-LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-LOG_FILE: str = os.getenv("LOG_FILE", str(BASE_DIR / "data" / "logs" / "app.log"))
-LOG_FORMAT: str = os.getenv(
-    "LOG_FORMAT",
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-
-# 数据库配置
-DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/schedules.db")
-
-# 数据目录
+# ============================================
+# 数据配置
+# ============================================
 DATA_DIR: str = os.getenv("DATA_DIR", str(BASE_DIR / "data"))
+DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR}/wechat.db")
 
-# AI对话配置
+# ============================================
+# 日志配置
+# ============================================
+LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+LOG_FILE: str = os.getenv("LOG_FILE", f"{DATA_DIR}/logs/app.log")
+
+# ============================================
+# 对话配置
+# ============================================
 DEFAULT_SYSTEM_PROMPT: str = os.getenv(
     "DEFAULT_SYSTEM_PROMPT",
-    "你是一个友好、乐于助人的AI助手。请用简洁、准确的语言回答用户的问题。"
+    "你是一个友好、乐于助人的AI助手。"
 )
-
-# 上下文配置
-CONTEXT_MEMORY_SIZE: int = int(os.getenv("CONTEXT_MEMORY_SIZE", "10"))  # 保留最近N轮对话
-
-# 消息超时配置（微信要求5秒内响应）
+CONTEXT_MEMORY_SIZE: int = int(os.getenv("CONTEXT_MEMORY_SIZE", "10"))
 WECHAT_REPLY_TIMEOUT: int = int(os.getenv("WECHAT_REPLY_TIMEOUT", "4"))
 
 
 class Config:
-    """配置类"""
+    """配置管理类"""
 
     @staticmethod
     def validate() -> bool:
         """验证必需的配置项"""
+        errors = []
+
         if not WECHAT_APP_ID:
-            print("警告: WECHAT_APP_ID 未设置")
+            errors.append("WECHAT_APP_ID 未设置")
         if not WECHAT_APP_SECRET:
-            print("警告: WECHAT_APP_SECRET 未设置")
+            errors.append("WECHAT_APP_SECRET 未设置")
+        if not WECHAT_TOKEN:
+            errors.append("WECHAT_TOKEN 未设置")
         if not ZHIPU_API_KEY:
-            print("错误: ZHIPU_API_KEY 未设置")
+            errors.append("ZHIPU_API_KEY 未设置")
+
+        if errors:
+            for error in errors:
+                print(f"❌ {error}")
             return False
         return True
 
@@ -83,13 +93,26 @@ class Config:
         print("=" * 50)
         print("微信AI助手配置")
         print("=" * 50)
-        print(f"微信APP ID: {WECHAT_APP_ID[:8]}...{WECHAT_APP_ID[-4:] if WECHAT_APP_ID else '未设置'}")
-        print(f"微信APP Secret: {'已设置' if WECHAT_APP_SECRET else '未设置'}")
-        print(f"微信Token: {WECHAT_TOKEN}")
-        print(f"智谱API Key: {ZHIPU_API_KEY[:16]}...{ZHIPU_API_KEY[-4:] if ZHIPU_API_KEY else '未设置'}")
-        print(f"智谱模型: {ZHIPU_MODEL}")
-        print(f"服务器地址: {SERVER_HOST}:{SERVER_PORT}")
-        print(f"日志级别: {LOG_LEVEL}")
+
+        # 微信配置
+        print("【微信配置】")
+        print(f"  APP ID: {WECHAT_APP_ID[:8]}...{WECHAT_APP_ID[-4:] if WECHAT_APP_ID else '未设置'}")
+        print(f"  Token: {WECHAT_TOKEN}")
+
+        # 智谱配置
+        print("【智谱 AI】")
+        print(f"  API Key: {ZHIPU_API_KEY[:8]}...{ZHIPU_API_KEY[-4:] if ZHIPU_API_KEY else '未设置'}")
+        print(f"  模型: {ZHIPU_MODEL}")
+
+        # LangSmith 配置
+        print("【LangSmith】")
+        print(f"  追踪: {'✅ 已启用' if LANGCHAIN_TRACING_V2 else '❌ 未启用'}")
+        print(f"  项目: {LANGCHAIN_PROJECT}")
+
+        # 服务器配置
+        print("【服务器】")
+        print(f"  地址: {SERVER_HOST}:{SERVER_PORT}")
+
         print("=" * 50)
 
 

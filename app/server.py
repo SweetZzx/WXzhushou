@@ -1,25 +1,20 @@
 """
 FastAPI 服务器配置
+使用 lifespan 管理应用生命周期
 """
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
 import logging
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 创建FastAPI应用
-app = FastAPI(
-    title="微信AI助手",
-    description="基于智谱GLM的微信机器人服务 - 支持日程管理",
-    version="2.0.0"
-)
 
-
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时的事件"""
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """应用生命周期管理"""
+    # === 启动时 ===
     logger.info("微信AI助手服务启动中...")
 
     # 初始化数据库
@@ -38,10 +33,9 @@ async def startup_event():
     except Exception as e:
         logger.error(f"提醒服务启动失败: {e}")
 
+    yield  # 应用运行中
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭时的事件"""
+    # === 关闭时 ===
     logger.info("微信AI助手服务关闭")
 
     # 停止提醒服务
@@ -59,6 +53,15 @@ async def shutdown_event():
         logger.info("数据库连接已关闭")
     except Exception as e:
         logger.error(f"关闭数据库连接失败: {e}")
+
+
+# 创建 FastAPI 应用
+app = FastAPI(
+    title="微信AI助手",
+    description="基于智谱GLM的微信机器人服务 - 支持日程管理",
+    version="2.0.0",
+    lifespan=lifespan
+)
 
 
 @app.get("/")

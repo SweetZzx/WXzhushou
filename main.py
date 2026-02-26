@@ -10,6 +10,15 @@ import os
 # 加载环境变量
 load_dotenv()
 
+# 启用 LangSmith 追踪（如果配置了）
+if os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true":
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    if os.getenv("LANGCHAIN_API_KEY"):
+        os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
+    if os.getenv("LANGCHAIN_PROJECT"):
+        os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGCHAIN_PROJECT")
+    print("LangSmith 追踪已启用")
+
 # 添加项目根目录到Python路径
 sys.path.insert(0, str(Path(__file__).parent))
 

@@ -64,3 +64,15 @@ htmlcov/
 
 # 微信相关（如果有上传文件）
 uploads/
+
+# uv
+.uv/
+uv.lock
+
+# 临时测试文件
+*.txt
+!requirements.txt
+
+# 敏感文件
+setupssh
+setup-ssh-key.ps1

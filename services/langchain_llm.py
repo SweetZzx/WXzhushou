@@ -8,13 +8,9 @@ from typing import Optional
 
 from langchain_openai import ChatOpenAI
 
-from config import ZHIPU_API_KEY
+from config import ZHIPU_API_KEY, ZHIPU_API_BASE, ZHIPU_MODEL
 
 logger = logging.getLogger(__name__)
-
-# 智谱 GLM API 配置
-ZHIPU_API_BASE = "https://open.bigmodel.cn/api/paas/v4"
-DEFAULT_MODEL = "glm-4"
 
 
 def get_llm(
@@ -27,7 +23,7 @@ def get_llm(
     获取 LLM 实例
 
     Args:
-        model: 模型名称，默认 glm-4
+        model: 模型名称，默认使用配置中的 ZHIPU_MODEL
         temperature: 温度参数，0-1
         max_tokens: 最大 token 数
         **kwargs: 其他 ChatOpenAI 参数
@@ -35,15 +31,16 @@ def get_llm(
     Returns:
         ChatOpenAI 实例
     """
+    model_name = model or ZHIPU_MODEL
     llm = ChatOpenAI(
-        model=model or DEFAULT_MODEL,
+        model=model_name,
         openai_api_key=ZHIPU_API_KEY,
         openai_api_base=ZHIPU_API_BASE,
         temperature=temperature,
         max_tokens=max_tokens,
         **kwargs
     )
-    logger.info(f"LLM 实例创建成功: model={model or DEFAULT_MODEL}")
+    logger.info(f"LLM 实例创建成功: model={model_name}")
     return llm
 
 

@@ -27,6 +27,7 @@ class TimeParser:
         "前天": -2,
         "昨天": -1,
         "今天": 0,
+        "今日": 0,
         "明日": 1,
         "明天": 1,
         "后天": 2,
@@ -63,17 +64,29 @@ class TimeParser:
         "周天": 6, "周日": 6, "星期日": 6, "礼拜日": 6, "星期天": 6,
     }
 
-    # 时间段映射（默认小时）
+    # 时间段映射 - 用于推断默认小时和处理上午/下午
     TIME_PERIODS = {
-        "凌晨": (0, 5),      # 0-5点
-        "早上": (6, 8),      # 6-8点
-        "上午": (9, 11),     # 9-11点
-        "中午": (12, 13),    # 12-13点
-        "下午": (14, 17),    # 14-17点
-        "傍晚": (18, 19),    # 18-19点
-        "晚上": (19, 22),    # 19-22点
-        "半夜": (23, 1),     # 23-1点
-        "深夜": (23, 2),     # 23-2点
+        "凌晨": {"hours": (0, 5), "default": 2, "adjust": None},
+        "早上": {"hours": (6, 8), "default": 7, "adjust": None},
+        "上午": {"hours": (9, 11), "default": 10, "adjust": None},
+        "中午": {"hours": (12, 13), "default": 12, "adjust": "noon"},
+        "午间": {"hours": (12, 14), "default": 12, "adjust": "noon"},
+        "下午": {"hours": (14, 17), "default": 15, "adjust": "pm"},
+        "傍晚": {"hours": (17, 19), "default": 18, "adjust": "pm"},
+        "晚上": {"hours": (19, 22), "default": 20, "adjust": "pm"},
+        "晚间": {"hours": (19, 23), "default": 20, "adjust": "pm"},
+        "夜间": {"hours": (20, 24), "default": 22, "adjust": "pm"},
+        "半夜": {"hours": (0, 3), "default": 0, "adjust": None},
+        "深夜": {"hours": (23, 3), "default": 23, "adjust": None},
+    }
+
+    # 即时表达
+    IMMEDIATE_KEYWORDS = {
+        "即刻": 0,
+        "马上": 0,
+        "现在": 0,
+        "立刻": 0,
+        " right now": 0,  # 英文兼容
     }
 
     # 中文数字映射（按长度降序处理，确保复合数字优先匹配）
@@ -118,10 +131,12 @@ class TimeParser:
         Args:
             time_str: 时间字符串，支持格式：
                       - ISO格式: "2024-02-12 15:00"
+                      - 月日格式: "3月15日"、"三月十五号"
                       - 相对日期: "今天"、"明天"、"后天"、"大后天"
                       - 周相关: "这周五"、"下周三"、"下下周一"
-                      - 时间点: "下午三点"、"晚上十点"、"凌晨2点"
-                      - 组合: "明天下午三点"、"后天晚上十点"
+                      - 时间点: "下午三点"、"晚上十点"、"凌晨2点"、"三点半"
+                      - 组合: "明天下午三点"、"3月15日下午3点半"
+                      - 即时: "即刻"、"马上"、"现在"
             reference_time: 参考时间，默认为当前时间
 
         Returns:
@@ -136,6 +151,12 @@ class TimeParser:
         time_str = time_str.strip()
 
         try:
+            # 0. 检查即时表达
+            for keyword in TimeParser.IMMEDIATE_KEYWORDS:
+                if keyword in time_str:
+                    logger.info(f"即时表达解析: '{time_str}' -> {reference_time}")
+                    return reference_time
+
             # 1. 优先解析ISO格式 "2024-02-12 15:00"
             standard_pattern = r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})"
             match = re.match(standard_pattern, time_str)
@@ -145,13 +166,19 @@ class TimeParser:
                 logger.info(f"ISO格式解析成功: '{time_str}' -> {result}")
                 return result
 
-            # 2. 解析带日期关键词的复杂时间表达式
+            # 2. 解析月日格式 "3月15日"、"三月十五号"
+            result = TimeParser._parse_month_day(time_str, reference_time)
+            if result:
+                logger.info(f"月日格式解析成功: '{time_str}' -> {result}")
+                return result
+
+            # 3. 解析带日期关键词的复杂时间表达式
             result = TimeParser._parse_complex_time(time_str, reference_time)
             if result:
                 logger.info(f"复杂时间解析成功: '{time_str}' -> {result}")
                 return result
 
-            # 3. 使用 dateparser 作为最后的fallback
+            # 4. 使用 dateparser 作为最后的fallback
             settings = {
                 "PREFER_DATES_FROM": "future",
                 "RELATIVE_BASE": reference_time,
@@ -205,20 +232,101 @@ class TimeParser:
     def _convert_chinese_numbers(text: str) -> str:
         """将中文数字转换为阿拉伯数字"""
         result = text
-        # 按长度降序排列，避免"十一"被替换成"11"后又替换"一"
+
+        # 1. 先处理"半"的情况（在中文数字转换前）
+        # "三点半" → "三点30"，而不是先转"三"成"3"再处理"半"
+        result = re.sub(r'([一二三四五六七八九十两]+)点半', r'\1点30', result)
+        result = re.sub(r'(\d+)点半', r'\1点30', result)
+
+        # 2. 处理"刻"的情况
+        result = re.sub(r'([一二三四五六七八九十]+)点一刻', r'\1点15', result)
+        result = re.sub(r'([一二三四五六七八九十]+)点三刻', r'\1点45', result)
+        result = re.sub(r'(\d+)点一刻', r'\1点15', result)
+        result = re.sub(r'(\d+)点三刻', r'\1点45', result)
+
+        # 3. 按长度降序排列，避免"十一"被替换成"11"后又替换"一"
         sorted_numbers = sorted(TimeParser.CHINESE_NUMBERS.items(), key=lambda x: -len(x[0]))
         for cn_num, ar_num in sorted_numbers:
             result = result.replace(cn_num, str(ar_num))
 
-        # 处理"半"的情况
-        if "半" in result:
-            result = result.replace("半", "30")
-
-        # 处理"刻"的情况 (一刻=15, 半刻=7.5≈8, 三刻=45)
-        result = re.sub(r'(\d+)点一刻', r'\1点15', result)
-        result = re.sub(r'(\d+)点三刻', r'\1点45', result)
-
         return result
+
+    @staticmethod
+    def _parse_month_day(time_str: str, reference_time: datetime) -> Optional[datetime]:
+        """
+        解析月日格式
+        支持: "3月15日"、"三月十五号"、"3/15"、"3-15"
+        """
+        original_str = time_str
+
+        # 中文月日格式: "三月十五号"、"3月15日"、"三月15日"
+        cn_month_day = r'([一二三四五六七八九十\d]+)月([一二三四五六七八九十廿\d]+)[日号]'
+        match = re.search(cn_month_day, time_str)
+        if match:
+            month_str, day_str = match.groups()
+            # 转换中文数字
+            month_str = TimeParser._convert_chinese_numbers(month_str)
+            day_str = TimeParser._convert_chinese_numbers(day_str)
+
+            try:
+                month = int(month_str)
+                day = int(day_str)
+
+                if 1 <= month <= 12 and 1 <= day <= 31:
+                    # 默认今年
+                    year = reference_time.year
+                    result = datetime(year, month, day)
+
+                    # 如果日期已过，尝试明年
+                    if result.date() < reference_time.date():
+                        result = datetime(year + 1, month, day)
+
+                    # 提取时间部分（如果有）
+                    time_result = TimeParser._extract_time(
+                        TimeParser._convert_chinese_numbers(time_str),
+                        time_str
+                    )
+                    if time_result:
+                        hour, minute = time_result
+                        result = result.replace(hour=hour, minute=minute)
+                    else:
+                        result = result.replace(hour=9, minute=0)
+
+                    return result
+            except (ValueError, TypeError):
+                pass
+
+        # 简写格式: "3/15"、"3-15"
+        short_date = r'(\d{1,2})[/-](\d{1,2})'
+        match = re.search(short_date, time_str)
+        if match:
+            try:
+                month = int(match.group(1))
+                day = int(match.group(2))
+
+                if 1 <= month <= 12 and 1 <= day <= 31:
+                    year = reference_time.year
+                    result = datetime(year, month, day)
+
+                    if result.date() < reference_time.date():
+                        result = datetime(year + 1, month, day)
+
+                    # 提取时间部分
+                    time_result = TimeParser._extract_time(
+                        TimeParser._convert_chinese_numbers(time_str),
+                        time_str
+                    )
+                    if time_result:
+                        hour, minute = time_result
+                        result = result.replace(hour=hour, minute=minute)
+                    else:
+                        result = result.replace(hour=9, minute=0)
+
+                    return result
+            except (ValueError, TypeError):
+                pass
+
+        return None
 
     @staticmethod
     def _extract_date(text: str, reference_time: datetime) -> Optional[datetime]:
@@ -326,12 +434,14 @@ class TimeParser:
     @staticmethod
     def _extract_time(converted_text: str, original_text: str) -> Optional[Tuple[int, int]]:
         """从文本中提取时间（小时和分钟）"""
-        # 时间匹配模式
+        # 时间匹配模式（按优先级排序）
         patterns = [
             r'(\d{1,2})点(\d{1,2})分?',     # 3点30、15点30分
+            r'(\d{1,2})时(\d{1,2})分?',     # 3时30分、15时30（新支持）
             r'(\d{1,2}):(\d{2})',           # 15:30
             r'(\d{1,2})\.(\d{2})',          # 15.30
             r'(\d{1,2})点',                 # 6点、15点（无分钟）
+            r'(\d{1,2})时',                 # 6时、15时（新支持）
         ]
 
         for pattern in patterns:
@@ -340,32 +450,30 @@ class TimeParser:
                 hour = int(match.group(1))
                 minute = int(match.group(2)) if len(match.groups()) > 1 and match.group(2) else 0
 
-                # 处理时间段（上午/下午/晚上等）
-                if "下午" in original_text or "晚上" in original_text or "傍晚" in original_text or "深夜" in original_text:
-                    if hour < 12:
-                        hour += 12
-                elif "中午" in original_text:
-                    # 中午默认是12点
-                    if hour < 12:
-                        hour = 12
-                elif "半夜" in original_text or "凌晨" in original_text:
-                    # 半夜和凌晨不转换
-                    pass
-                elif "上午" in original_text or "早上" in original_text:
-                    # 上午保持不变，但如果>=12则可能是错误
-                    if hour >= 12:
-                        hour -= 12
+                # 使用 TIME_PERIODS 进行时间段调整
+                for period_name, period_info in TimeParser.TIME_PERIODS.items():
+                    if period_name in original_text:
+                        adjust = period_info.get("adjust")
+                        if adjust == "pm" and hour < 12:
+                            hour += 12
+                        elif adjust == "noon" and hour < 12:
+                            hour = max(hour, 12)  # 中午至少12点
+                        break
 
                 # 验证时间范围
                 if 0 <= hour <= 23 and 0 <= minute <= 59:
                     return (hour, minute)
 
+        # 没有明确时间，检查是否只有时间段
+        for period_name, period_info in TimeParser.TIME_PERIODS.items():
+            if period_name in original_text:
+                # 返回该时间段的默认小时
+                return (period_info["default"], 0)
+
         # 特殊时间点处理
-        if "中午" in original_text and not re.search(r'\d+点', converted_text):
-            return (12, 0)
-        if "半夜" in original_text or "子夜" in original_text:
+        if "子夜" in original_text:
             return (0, 0)
-        if "黄昏" in original_text or "傍晚" in original_text:
+        if "黄昏" in original_text:
             return (18, 0)
 
         return None

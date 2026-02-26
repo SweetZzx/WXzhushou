@@ -12,7 +12,7 @@ from typing import Optional, Dict, Set
 import logging
 import asyncio
 
-from database.session import AsyncSessionLocal, init_db
+from database import session as db_session
 from models.schedule import Schedule
 from models.user_settings import UserSettings
 from services.wechat_push_service import wechat_push_service
@@ -31,7 +31,7 @@ class ReminderService:
     async def start(self):
         """启动调度器"""
         # 确保数据库已初始化
-        await init_db()
+        await db_session.init_db()
 
         # 添加预提醒检查任务 (每分钟检查一次)
         self.scheduler.add_job(
@@ -59,7 +59,7 @@ class ReminderService:
         启动时加载所有用户的每日提醒设置，为每个用户创建定时任务
         """
         try:
-            async with AsyncSessionLocal() as db:
+            async with db_session.AsyncSessionLocal() as db:
                 # 获取所有开启了每日提醒的用户设置
                 result = await db.execute(
                     select(UserSettings).where(
@@ -124,7 +124,7 @@ class ReminderService:
         发送单个用户每日提醒的包装函数（供调度器调用）
         """
         try:
-            async with AsyncSessionLocal() as db:
+            async with db_session.AsyncSessionLocal() as db:
                 # 获取用户设置
                 user_settings = await self._get_user_settings(user_id, db)
 
@@ -150,7 +150,7 @@ class ReminderService:
         check_end = now + timedelta(minutes=11)   # 11分钟后
 
         try:
-            async with AsyncSessionLocal() as db:
+            async with db_session.AsyncSessionLocal() as db:
                 # 查找即将开始的日程
                 result = await db.execute(
                     select(Schedule).where(
@@ -309,7 +309,7 @@ class ReminderService:
             更新后的用户设置
         """
         try:
-            async with AsyncSessionLocal() as db:
+            async with db_session.AsyncSessionLocal() as db:
                 settings = await self._get_user_settings(user_id, db)
 
                 # 记录是否需要重新调度
@@ -372,7 +372,7 @@ class ReminderService:
     async def get_user_settings(self, user_id: str) -> Optional[Dict]:
         """获取用户设置"""
         try:
-            async with AsyncSessionLocal() as db:
+            async with db_session.AsyncSessionLocal() as db:
                 settings = await self._get_user_settings(user_id, db)
                 return settings.to_dict()
         except Exception as e:
@@ -405,7 +405,7 @@ class ReminderService:
         logger.info("开始发送测试提醒...")
 
         try:
-            async with AsyncSessionLocal() as db:
+            async with db_session.AsyncSessionLocal() as db:
                 if user_id:
                     # 发送给指定用户
                     user_ids = [user_id]
