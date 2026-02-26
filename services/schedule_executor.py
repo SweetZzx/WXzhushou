@@ -51,6 +51,27 @@ class ScheduleExecutor:
 
         return response, ai_output
 
+    async def execute(
+        self,
+        action: ScheduleAction,
+        user_id: str,
+        db_session,
+        ai_reply: str
+    ) -> str:
+        """
+        执行日程操作（供外部调用）
+
+        Args:
+            action: 日程操作
+            user_id: 用户ID
+            db_session: 数据库会话
+            ai_reply: AI 的原始回复
+
+        Returns:
+            执行结果
+        """
+        return await self._execute_action(action, user_id, db_session, ai_reply)
+
     async def _execute_action(
         self,
         action: ScheduleAction,
