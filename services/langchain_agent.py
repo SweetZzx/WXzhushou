@@ -1,18 +1,20 @@
 """
-日程 Agent 服务
-聊天 + 意图检测 + 结构化执行
+智能助手服务
+聊天 + 意图检测 + 结构化执行（日程 + 联系人）
 """
 import logging
 import time
 from collections import defaultdict
 
+from services.chat_with_action import chat_service
 from services.schedule_executor import schedule_executor
+from services.contact_executor import contact_executor
 
 logger = logging.getLogger(__name__)
 
 
 class LangChainAgentService:
-    """日程 Agent 服务"""
+    """智能助手服务"""
 
     def __init__(self):
         # 对话历史（user_id -> history list）
@@ -24,8 +26,8 @@ class LangChainAgentService:
 
         流程：
         1. LLM 聊天 + 检测意图
-        2. 如果有日程意图，执行操作
-        3. 返回回复（操作用模板，聊天用 AI 回复）
+        2. 根据意图类型调用对应执行器
+        3. 返回回复
         """
         start_time = time.time()
 
@@ -33,25 +35,44 @@ class LangChainAgentService:
             # 获取用户历史
             history = self._history.get(user_id, [])
 
-            # 调用执行器处理
-            response, ai_output = await schedule_executor.process(
-                message=message,
-                user_id=user_id,
-                db_session=db_session,
-                history=history
-            )
+            # 1. 调用 LLM 获取意图
+            ai_output = await chat_service.process(message, history)
 
-            # 更新历史
+            # 2. 根据意图类型执行操作
+            if ai_output.schedule_action:
+                # 日程操作
+                response = await schedule_executor.execute(
+                    ai_output.schedule_action,
+                    user_id,
+                    db_session,
+                    ai_output.reply
+                )
+                action_type = "📅"
+
+            elif ai_output.contact_action:
+                # 联系人操作
+                response = await contact_executor.process(
+                    ai_output.contact_action,
+                    user_id,
+                    db_session
+                )
+                action_type = "👤"
+
+            else:
+                # 普通聊天
+                response = ai_output.reply
+                action_type = "💬"
+
+            # 3. 更新历史
             self._history[user_id].append({"role": "user", "content": message})
             self._history[user_id].append({"role": "assistant", "content": response})
 
-            # 限制历史长度（保留最近 6 轮 = 12 条消息）
+            # 限制历史长度
             if len(self._history[user_id]) > 12:
                 self._history[user_id] = self._history[user_id][-12:]
 
             elapsed = time.time() - start_time
-            has_action = "✅" if ai_output.action else "💬"
-            logger.info(f"[Agent] {has_action} 耗时: {elapsed:.2f}s")
+            logger.info(f"[Agent] {action_type} 耗时: {elapsed:.2f}s")
 
             return response
 
