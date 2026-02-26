@@ -431,9 +431,9 @@ class ReminderService:
 
                     # 发送提醒
                     if days_until == 0:
-                        message = f"🎂 今天是 {name} 的生日！\n\n别忘了送上祝福~ 🎁"
+                        message = f"今天是 {name} 的生日！\n\n别忘了送上祝福~"
                     else:
-                        message = f"🎂 {name} 的生日还有 {days_until} 天就到了\n\n生日: {contact['birthday']}\n记得准备礼物哦~ 🎁"
+                        message = f"{name} 的生日还有 {days_until} 天就到了\n\n生日: {contact['birthday']}\n记得准备礼物哦~"
 
                     success = await wechat_push_service.send_text_message(user_id, message)
                     if success:
