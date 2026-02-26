@@ -73,13 +73,13 @@ class ContactExecutor:
             info_parts = []
             if contact.phone:
                 phone = contact_service.get_decrypted_phone(contact)
-                info_parts.append(f"📞 {phone}")
+                info_parts.append(f"电话: {phone}")
             if contact.birthday:
-                info_parts.append(f"🎂 {contact.birthday}")
+                info_parts.append(f"生日: {contact.birthday}")
             if contact.remark:
-                info_parts.append(f"📝 {contact.remark}")
+                info_parts.append(f"备注: {contact.remark}")
             if contact.extra:
-                info_parts.append(f"📋 {contact.extra}")
+                info_parts.append(f"其他: {contact.extra}")
 
             if info_parts:
                 reply += "\n\n" + "\n".join(info_parts)
