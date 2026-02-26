@@ -53,6 +53,9 @@ class ContactExecutor:
             return "❓ 请告诉我联系人的姓名"
 
         try:
+            # 调试日志
+            logger.info(f"[联系人创建] name={action.name}, phone={action.phone}, birthday={action.birthday}, remark={action.remark}, extra={action.extra}")
+
             # 智能创建/更新
             contact, is_new = await contact_service.upsert_contact(
                 user_id=user_id,
@@ -62,6 +65,8 @@ class ContactExecutor:
                 remark=action.remark,
                 extra=action.extra
             )
+
+            logger.info(f"[联系人创建] 结果: id={contact.id}, is_new={is_new}, birthday={contact.birthday}")
 
             # 构建回复
             if is_new:
@@ -99,11 +104,21 @@ class ContactExecutor:
         """查询联系人"""
         try:
             if action.name:
-                # 查询单个联系人
+                # 清理名称（去除可能的助词）
+                clean_name = action.name.rstrip("的")
+                logger.info(f"[联系人查询] 原始名称: {action.name}, 清理后: {clean_name}")
+
+                # 查询单个联系人（先尝试精确匹配）
                 contact = await contact_service.find_by_name(user_id, action.name)
+                if not contact and clean_name != action.name:
+                    # 尝试清理后的名称
+                    contact = await contact_service.find_by_name(user_id, clean_name)
 
                 if not contact:
                     return f"🔍 没有找到「{action.name}」的联系方式\n💡 你可以说「{action.name}的电话是xxx」来添加"
+
+                # 调试日志
+                logger.info(f"[联系人查询] 找到联系人: id={contact.id}, name={contact.name}, birthday={contact.birthday}, phone={contact.phone}, remark={contact.remark}, extra={contact.extra}")
 
                 # 显示联系人信息
                 reply = f"👤 {contact.name}"
@@ -122,7 +137,7 @@ class ContactExecutor:
                 if info_parts:
                     reply += "\n\n" + "\n".join(info_parts)
                 else:
-                    reply += "\n\n💡 暂无详细信息，可以说「{action.name}的电话是xxx」来添加"
+                    reply += f"\n\n💡 暂无详细信息，可以说「{action.name}的电话是xxx」来添加"
 
                 return reply
 

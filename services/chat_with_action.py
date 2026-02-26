@@ -211,17 +211,26 @@ class ChatWithActionService:
     def _parse_json_output(self, raw_content: str) -> AIOutput:
         """解析 LLM 返回的 JSON"""
         try:
-            content = raw_content
+            content = raw_content.strip()
 
             # 如果包含 ```json 代码块，提取内容
             if "```json" in content:
                 match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
                 if match:
-                    content = match.group(1)
+                    content = match.group(1).strip()
             elif "```" in content:
                 match = re.search(r"```\s*(.*?)\s*```", content, re.DOTALL)
                 if match:
-                    content = match.group(1)
+                    content = match.group(1).strip()
+
+            # 如果内容不直接是 JSON 对象，尝试提取第一个 JSON 对象
+            if not content.startswith("{"):
+                # 尝试找到第一个 { 和最后一个 }
+                start = content.find("{")
+                end = content.rfind("}")
+                if start != -1 and end != -1 and end > start:
+                    content = content[start:end+1]
+                    logger.debug(f"提取 JSON: {content[:100]}...")
 
             # 解析 JSON
             data = json.loads(content.strip())
@@ -244,6 +253,12 @@ class ChatWithActionService:
             if data.get("contact_action") and isinstance(data["contact_action"], dict):
                 contact_action = ContactAction(**data["contact_action"])
 
+            # 日志记录解析结果
+            if schedule_action:
+                logger.info(f"[JSON解析] 日程操作: type={schedule_action.type}")
+            if contact_action:
+                logger.info(f"[JSON解析] 联系人操作: type={contact_action.type}, name={contact_action.name}")
+
             return AIOutput(
                 reply=data.get("reply", ""),
                 schedule_action=schedule_action,
@@ -251,7 +266,7 @@ class ChatWithActionService:
             )
 
         except json.JSONDecodeError as e:
-            logger.warning(f"JSON 解析失败: {e}, 原始内容: {raw_content[:100]}")
+            logger.warning(f"JSON 解析失败: {e}, 原始内容: {raw_content[:200]}")
             return AIOutput(reply=raw_content, schedule_action=None, contact_action=None)
 
         except Exception as e:
