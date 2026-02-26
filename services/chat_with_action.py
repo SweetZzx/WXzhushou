@@ -40,6 +40,7 @@ class ContactAction(BaseModel):
     birthday: Optional[str] = Field(default=None, description="生日，格式: MM-DD")
     remark: Optional[str] = Field(default=None, description="备注（如：大学同学、前同事）")
     extra: Optional[str] = Field(default=None, description="其他信息（爱好、QQ、邮箱、地址等）")
+    query_field: Optional[str] = Field(default=None, description="查询的字段类型: phone/birthday/all，例如'电话是多少'为phone，'生日是什么'为birthday，'所有信息'为all或不填")
 
 
 class AIOutput(BaseModel):
@@ -89,7 +90,9 @@ SYSTEM_PROMPT = """你是一个智能助手，帮助用户管理日程和联系�
 - "小明QQ是12345678" → 创建/更新联系人，记录QQ到extra
 - "小明邮箱是xx@qq.com" → 创建/更新联系人，记录邮箱到extra
 - "小明住在北京" → 创建/更新联系人，记录地址到extra
-- "小明的电话是多少" → 查询联系人
+- "小明的电话是多少" → 查询联系人，query_field: "phone"
+- "小明的生日是什么时候" → 查询联系人，query_field: "birthday"
+- "小明的信息" / "小明的所有信息" → 查询联系人，query_field: "all" 或不填
 - "我记录了哪些联系人" → 列出所有联系人
 
 【操作类型】
@@ -134,7 +137,13 @@ SYSTEM_PROMPT = """你是一个智能助手，帮助用户管理日程和联系�
 输出: {{"reply": "好的，记下了", "schedule_action": null, "contact_action": {{"type": "contact_create", "name": "小明", "extra": "QQ：12345678，邮箱：xiaoming@qq.com"}}}}
 
 用户: "小明的电话是多少"
-输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明"}}}}
+输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "phone"}}}}
+
+用户: "小明的生日是什么时候"
+输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "birthday"}}}}
+
+用户: "小明的所有信息"
+输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "all"}}}}
 
 用户: "我记录了哪些联系人"
 输出: {{"reply": "让我看看...", "schedule_action": null, "contact_action": {{"type": "contact_query"}}}}
