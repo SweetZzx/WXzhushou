@@ -42,6 +42,15 @@ class ReminderService:
         )
         logger.info("已添加日程预提醒检查任务: 每分钟检查")
 
+        # 添加生日提醒检查任务 (每天早上8点检查)
+        self.scheduler.add_job(
+            self.check_birthday_reminders,
+            CronTrigger(hour=8, minute=0),
+            id="birthday_check",
+            replace_existing=True
+        )
+        logger.info("已添加生日提醒检查任务: 每天8:00检查")
+
         # 加载所有用户的每日提醒设置，为每个用户创建定时任务
         await self._load_daily_reminder_jobs()
 
@@ -397,6 +406,43 @@ class ReminderService:
         else:
             logger.error(f"测试推送失败: user_id={user_id}")
         return success
+
+    async def check_birthday_reminders(self):
+        """
+        检查并发送生日提醒
+        提前7天和当天发送提醒
+        """
+        try:
+            from services.contact_service import ContactService
+            from models.contact import Contact
+
+            async with db_session.AsyncSessionLocal() as db:
+                contact_service = ContactService(db)
+
+                # 获取未来7天内过生日的联系人
+                upcoming = await contact_service.get_upcoming_birthdays(days=7)
+
+                logger.info(f"检查生日提醒: 发现 {len(upcoming)} 个即将过生日的联系人")
+
+                for contact in upcoming:
+                    user_id = contact["user_id"]
+                    name = contact["name"]
+                    days_until = contact["days_until"]
+
+                    # 发送提醒
+                    if days_until == 0:
+                        message = f"🎂 今天是 {name} 的生日！\n\n别忘了送上祝福~ 🎁"
+                    else:
+                        message = f"🎂 {name} 的生日还有 {days_until} 天就到了\n\n生日: {contact['birthday']}\n记得准备礼物哦~ 🎁"
+
+                    success = await wechat_push_service.send_text_message(user_id, message)
+                    if success:
+                        logger.info(f"已发送生日提醒: {name} 给用户 {user_id}")
+                    else:
+                        logger.warning(f"发送生日提醒失败: {name} 给用户 {user_id}")
+
+        except Exception as e:
+            logger.error(f"检查生日提醒失败: {e}", exc_info=True)
 
     async def send_test_reminder_now(self, user_id: str = None):
         """

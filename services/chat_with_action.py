@@ -1,11 +1,11 @@
 """
 聊天 + 意图检测服务
-LLM 负责自然对话 + 检测日程意图 + 提取结构化数据
+LLM 负责自然对话 + 检测日程/联系人意图 + 提取结构化数据
 """
 import logging
 import json
 import re
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -32,54 +32,80 @@ class ScheduleAction(BaseModel):
     pre_reminder_minutes: Optional[int] = Field(default=None, description="日程前多少分钟提醒")
 
 
+class ContactAction(BaseModel):
+    """联系人操作"""
+    type: str = Field(default="", description="操作类型: contact_create/contact_query/contact_update/contact_delete")
+    name: Optional[str] = Field(default=None, description="联系人姓名")
+    phone: Optional[str] = Field(default=None, description="电话号码")
+    birthday: Optional[str] = Field(default=None, description="生日，格式: MM-DD")
+    remark: Optional[str] = Field(default=None, description="备注")
+    extra: Optional[str] = Field(default=None, description="其他信息")
+
+
 class AIOutput(BaseModel):
     """AI 输出格式"""
     reply: str = Field(description="给用户的回复内容")
-    action: Optional[ScheduleAction] = Field(default=None, description="日程操作（如果检测到）")
+    schedule_action: Optional[ScheduleAction] = Field(default=None, description="日程操作")
+    contact_action: Optional[ContactAction] = Field(default=None, description="联系人操作")
+
+    @property
+    def action(self):
+        """兼容旧代码的属性"""
+        return self.schedule_action or self.contact_action
+
+    @property
+    def action_type(self) -> str:
+        """获取操作类型"""
+        if self.schedule_action:
+            return self.schedule_action.type
+        if self.contact_action:
+            return self.contact_action.type
+        return ""
 
 
 # ============================================
 # 系统提示词
 # ============================================
 
-SYSTEM_PROMPT = """你是一个日程管理助手，同时也是用户的好朋友。
+SYSTEM_PROMPT = """你是一个智能助手，帮助用户管理日程和联系人。
 
 【你的职责】
 1. 和用户自然聊天，像朋友一样
-2. 在对话中检测用户是否有日程相关的意图
-3. 如果有，提取结构化信息并按 JSON 格式输出
+2. 在对话中检测用户的意图（日程相关或联系人相关）
+3. 如果有明确意图，提取结构化信息并按 JSON 格式输出
 
-【日程意图判断标准】
-只要消息包含「时间 + 事件」，就应该创建日程，不要追问细节：
-- "下周五看电影" → 创建（时间：下周五，事件：看电影）
-- "明天开会" → 创建（时间：明天，事件：开会）
-- "3号考试" → 创建（时间：3号，事件：考试）
+【日程意图判断】
+消息包含「时间 + 事件」时创建日程：
+- "下周五看电影" → 创建日程
+- "明天开会" → 创建日程
+- "明天有什么安排" → 查询日程
+
+【联系人意图判断】
+消息提到某人的电话、生日、联系方式时：
+- "小明的电话是13812345678" → 添加/更新联系人
+- "小明生日是3月15号" → 更新联系人生日
+- "小明的电话是多少" → 查询联系人
+- "我记录了哪些联系人" → 列出所有联系人
 
 【操作类型】
-- create: 创建日程（时间+事件齐全时立即创建，不追问）
-- query: 查询日程（"明天有什么安排"、"我的日程"）
-- update: 修改日程（"改成3点"、"推迟半小时"）
-- delete: 删除日程（"删除这个"、"取消明天的"）
-- settings: 查看提醒设置（"我的设置"、"提醒设置"）
-- update_settings: 修改提醒设置（"把每日提醒改成7点"、"关闭日程前提醒"）
+日程操作：
+- create: 创建日程
+- query: 查询日程
+- update: 修改日程
+- delete: 删除日程
+- settings/update_settings: 查看或修改设置
+
+联系人操作：
+- contact_create: 添加联系人（有姓名+信息时自动创建或更新）
+- contact_query: 查询联系人
+- contact_delete: 删除联系人
 
 【输出格式 - 必须是有效 JSON】
 ```json
 {{
-  "reply": "你的回复内容",
-  "action": null
-}}
-```
-
-或者有日程操作时：
-```json
-{{
-  "reply": "简短确认",
-  "action": {{
-    "type": "create",
-    "title": "看电影",
-    "time": "下周五"
-  }}
+  "reply": "你的回复",
+  "schedule_action": null,
+  "contact_action": null
 }}
 ```
 
@@ -88,31 +114,25 @@ SYSTEM_PROMPT = """你是一个日程管理助手，同时也是用户的好朋�
 
 【示例】
 用户: "下周五看电影"
-输出: {{"reply": "好嘞，帮你记下了！", "action": {{"type": "create", "title": "看电影", "time": "下周五"}}}}
+输出: {{"reply": "好嘞，帮你记下了！", "schedule_action": {{"type": "create", "title": "看电影", "time": "下周五"}}, "contact_action": null}}
 
-用户: "明天有什么安排"
-输出: {{"reply": "让我看看...", "action": {{"type": "query", "date": "明天"}}}}
+用户: "小明的电话是13812345678"
+输出: {{"reply": "好的，帮你记下小明的电话", "schedule_action": null, "contact_action": {{"type": "contact_create", "name": "小明", "phone": "13812345678"}}}}
+
+用户: "小明生日是3月15号"
+输出: {{"reply": "好的，记下了", "schedule_action": null, "contact_action": {{"type": "contact_create", "name": "小明", "birthday": "03-15"}}}}
+
+用户: "小明的电话是多少"
+输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明"}}}}
+
+用户: "我记录了哪些联系人"
+输出: {{"reply": "让我看看...", "schedule_action": null, "contact_action": {{"type": "contact_query"}}}}
 
 用户: "你好呀"
-输出: {{"reply": "你好！有什么可以帮你的？", "action": null}}
+输出: {{"reply": "你好！有什么可以帮你的？", "schedule_action": null, "contact_action": null}}
 
-用户: "改成下午三点"
-输出: {{"reply": "好的", "action": {{"type": "update", "time": "下午三点"}}}}
-
-用户: "我的设置"
-输出: {{"reply": "让我看看...", "action": {{"type": "settings"}}}}
-
-用户: "把每日提醒改成7点"
-输出: {{"reply": "好的", "action": {{"type": "update_settings", "daily_reminder_time": "07:00"}}}}
-
-用户: "关闭每日提醒"
-输出: {{"reply": "好的，已为你关闭每日提醒", "action": {{"type": "update_settings", "daily_reminder_enabled": false}}}}
-
-用户: "开启日程前提醒"
-输出: {{"reply": "好的", "action": {{"type": "update_settings", "pre_reminder_enabled": true}}}}
-
-用户: "提前1小时提醒"
-输出: {{"reply": "好的", "action": {{"type": "update_settings", "pre_reminder_minutes": 60}}}}
+用户: "明天有什么安排"
+输出: {{"reply": "让我看看...", "schedule_action": {{"type": "query", "date": "明天"}}, "contact_action": null}}
 
 请只输出 JSON，不要输出其他内容。"""
 
@@ -165,8 +185,10 @@ class ChatWithActionService:
             result = self._parse_json_output(raw_content)
 
             # 记录日志
-            if result.action:
-                logger.info(f"[意图检测] type={result.action.type}, data={result.action.model_dump(exclude_none=True)}")
+            if result.schedule_action:
+                logger.info(f"[日程意图] type={result.schedule_action.type}")
+            elif result.contact_action:
+                logger.info(f"[联系人意图] type={result.contact_action.type}, name={result.contact_action.name}")
             else:
                 logger.info(f"[普通聊天] {result.reply[:30] if result.reply else 'N/A'}...")
 
@@ -174,12 +196,11 @@ class ChatWithActionService:
 
         except Exception as e:
             logger.error(f"处理失败: {e}", exc_info=True)
-            return AIOutput(reply="抱歉，我刚才走神了，能再说一遍吗？", action=None)
+            return AIOutput(reply="抱歉，我刚才走神了，能再说一遍吗？")
 
     def _parse_json_output(self, raw_content: str) -> AIOutput:
         """解析 LLM 返回的 JSON"""
         try:
-            # 尝试直接解析
             content = raw_content
 
             # 如果包含 ```json 代码块，提取内容
@@ -196,23 +217,36 @@ class ChatWithActionService:
             data = json.loads(content.strip())
 
             # 构建 AIOutput
-            action = None
+            schedule_action = None
+            contact_action = None
+
+            # 兼容旧格式（只有 action 字段）
             if data.get("action") and isinstance(data["action"], dict):
-                action = ScheduleAction(**data["action"])
+                action_type = data["action"].get("type", "")
+                if action_type.startswith("contact"):
+                    contact_action = ContactAction(**data["action"])
+                else:
+                    schedule_action = ScheduleAction(**data["action"])
+
+            # 新格式
+            if data.get("schedule_action") and isinstance(data["schedule_action"], dict):
+                schedule_action = ScheduleAction(**data["schedule_action"])
+            if data.get("contact_action") and isinstance(data["contact_action"], dict):
+                contact_action = ContactAction(**data["contact_action"])
 
             return AIOutput(
                 reply=data.get("reply", ""),
-                action=action
+                schedule_action=schedule_action,
+                contact_action=contact_action
             )
 
         except json.JSONDecodeError as e:
             logger.warning(f"JSON 解析失败: {e}, 原始内容: {raw_content[:100]}")
-            # 如果解析失败，把原始内容当作回复
-            return AIOutput(reply=raw_content, action=None)
+            return AIOutput(reply=raw_content, schedule_action=None, contact_action=None)
 
         except Exception as e:
             logger.error(f"解析输出失败: {e}")
-            return AIOutput(reply="抱歉，我没太理解", action=None)
+            return AIOutput(reply="抱歉，我没太理解", schedule_action=None, contact_action=None)
 
 
 # 全局实例

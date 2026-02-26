@@ -63,6 +63,13 @@ DEFAULT_SYSTEM_PROMPT: str = os.getenv(
 CONTEXT_MEMORY_SIZE: int = int(os.getenv("CONTEXT_MEMORY_SIZE", "10"))
 WECHAT_REPLY_TIMEOUT: int = int(os.getenv("WECHAT_REPLY_TIMEOUT", "4"))
 
+# ============================================
+# 加密配置
+# ============================================
+# 联系人数据加密密钥（32字节，用于AES-256）
+# 生成方式: python -c "import secrets; print(secrets.token_hex(16))"
+CONTACT_ENCRYPT_KEY: str = os.getenv("CONTACT_ENCRYPT_KEY", "contact_encrypt_key_32bytes!")
+
 
 class Config:
     """配置管理类"""
