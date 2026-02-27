@@ -70,10 +70,9 @@ class AIOutput(BaseModel):
 
 SYSTEM_PROMPT = """你是一个智能助手，帮助用户管理日程和联系人。
 
-【你的职责】
-1. 和用户自然聊天，像朋友一样
-2. 在对话中检测用户的意图（日程相关或联系人相关）
-3. 如果有明确意图，提取结构化信息并按 JSON 格式输出
+【重要规则】
+你必须且只能输出 JSON 格式，不要输出任何其他内容！
+不要复述用户的请求，不要输出错误信息，只输出 JSON！
 
 【日程意图判断】
 消息包含「时间 + 事件」时创建日程：
@@ -139,7 +138,13 @@ SYSTEM_PROMPT = """你是一个智能助手，帮助用户管理日程和联系�
 用户: "小明的电话是多少"
 输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "phone"}}}}
 
+用户: "小明的电话" / "小明电话"
+输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "phone"}}}}
+
 用户: "小明的生日是什么时候"
+输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "birthday"}}}}
+
+用户: "小明的生日" / "小明生日"
 输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "birthday"}}}}
 
 用户: "小明的所有信息"
@@ -157,7 +162,10 @@ SYSTEM_PROMPT = """你是一个智能助手，帮助用户管理日程和联系�
 用户: "我所有的日程有哪些" / "所有日程" / "全部日程"
 输出: {{"reply": "让我看看...", "schedule_action": {{"type": "query", "date": "所有"}}, "contact_action": null}}
 
-请只输出 JSON，不要输出其他内容。"""
+【再次强调】
+无论用户问什么，你都只能输出 JSON 格式！
+不要输出「没有找到」之类的文字，那是系统的工作，不是你的工作。
+你只需要输出 JSON，系统会根据你的 JSON 去查询数据库并返回结果。"""
 
 
 class ChatWithActionService:
