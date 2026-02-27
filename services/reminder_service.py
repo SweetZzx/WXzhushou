@@ -413,7 +413,7 @@ class ReminderService:
         提前7天和当天发送提醒
         """
         try:
-            from services.contact_service import ContactService
+            from services.modules.contact.service import ContactService
             from models.contact import Contact
 
             async with db_session.AsyncSessionLocal() as db:

@@ -56,20 +56,7 @@ class ContactService:
         remark: Optional[str] = None,
         extra: Optional[str] = None
     ) -> Contact:
-        """
-        创建联系人
-
-        Args:
-            user_id: 用户ID
-            name: 联系人姓名
-            phone: 电话号码（会被加密）
-            birthday: 生日 (MM-DD 格式)
-            remark: 备注
-            extra: 其他信息
-
-        Returns:
-            创建的联系人对象
-        """
+        """创建联系人"""
         try:
             contact = Contact(
                 user_id=user_id,
@@ -90,16 +77,7 @@ class ContactService:
             raise
 
     async def find_by_name(self, user_id: str, name: str) -> Optional[Contact]:
-        """
-        根据姓名查找联系人
-
-        Args:
-            user_id: 用户ID
-            name: 联系人姓名
-
-        Returns:
-            联系人对象或None
-        """
+        """根据姓名查找联系人"""
         result = await self.db.execute(
             select(Contact).where(
                 Contact.user_id == user_id,
@@ -108,21 +86,8 @@ class ContactService:
         )
         return result.scalar_one_or_none()
 
-    async def search_contacts(
-        self,
-        user_id: str,
-        keyword: str
-    ) -> List[Contact]:
-        """
-        搜索联系人（按姓名或备注）
-
-        Args:
-            user_id: 用户ID
-            keyword: 搜索关键词
-
-        Returns:
-            匹配的联系人列表
-        """
+    async def search_contacts(self, user_id: str, keyword: str) -> List[Contact]:
+        """搜索联系人（按姓名或备注）"""
         result = await self.db.execute(
             select(Contact).where(
                 Contact.user_id == user_id,
@@ -135,15 +100,7 @@ class ContactService:
         return result.scalars().all()
 
     async def list_contacts(self, user_id: str) -> List[Contact]:
-        """
-        列出用户所有联系人
-
-        Args:
-            user_id: 用户ID
-
-        Returns:
-            联系人列表
-        """
+        """列出用户所有联系人"""
         result = await self.db.execute(
             select(Contact)
             .where(Contact.user_id == user_id)
@@ -161,21 +118,7 @@ class ContactService:
         remark: Optional[str] = None,
         extra: Optional[str] = None
     ) -> Optional[Contact]:
-        """
-        更新联系人信息
-
-        Args:
-            contact_id: 联系人ID
-            user_id: 用户ID
-            name: 新姓名
-            phone: 新电话（会被加密）
-            birthday:新生日
-            remark: 新备注
-            extra: 新其他信息
-
-        Returns:
-            更新后的联系人或None
-        """
+        """更新联系人信息"""
         try:
             result = await self.db.execute(
                 select(Contact).where(
@@ -220,20 +163,7 @@ class ContactService:
         remark: Optional[str] = None,
         extra: Optional[str] = None
     ) -> tuple[Contact, bool]:
-        """
-        创建或更新联系人（智能合并）
-
-        Args:
-            user_id: 用户ID
-            name: 联系人姓名
-            phone: 电话号码
-            birthday: 生日
-            remark: 备注
-            extra: 其他信息
-
-        Returns:
-            (联系人对象, 是否新建)
-        """
+        """创建或更新联系人（智能合并）"""
         existing = await self.find_by_name(user_id, name)
 
         if existing:
@@ -272,16 +202,7 @@ class ContactService:
             return contact, True
 
     async def delete_contact(self, contact_id: int, user_id: str) -> bool:
-        """
-        删除联系人
-
-        Args:
-            contact_id: 联系人ID
-            user_id: 用户ID
-
-        Returns:
-            是否删除成功
-        """
+        """删除联系人"""
         try:
             result = await self.db.execute(
                 select(Contact).where(
@@ -306,16 +227,7 @@ class ContactService:
             return False
 
     async def get_birthday_contacts(self, month: int, day: int) -> List[dict]:
-        """
-        获取指定日期过生日的联系人（用于提醒）
-
-        Args:
-            month: 月份 (1-12)
-            day: 日期 (1-31)
-
-        Returns:
-            联系人列表（包含 user_id 和联系人信息）
-        """
+        """获取指定日期过生日的联系人（用于提醒）"""
         birthday_str = f"{month:02d}-{day:02d}"
 
         result = await self.db.execute(
@@ -334,15 +246,7 @@ class ContactService:
         ]
 
     async def get_upcoming_birthdays(self, days: int = 7) -> List[dict]:
-        """
-        获取未来N天内过生日的联系人
-
-        Args:
-            days: 天数
-
-        Returns:
-            联系人列表
-        """
+        """获取未来N天内过生日的联系人"""
         from datetime import date, timedelta
 
         today = date.today()

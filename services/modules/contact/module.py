@@ -8,8 +8,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.modules.base import BaseModule
-from services.chat_with_action import ContactAction  # 使用统一的 Action 定义
-from services.contact_service import ContactService
+from services.chat_with_action import ContactAction
+from services.modules.contact.service import ContactService
 
 logger = logging.getLogger(__name__)
 

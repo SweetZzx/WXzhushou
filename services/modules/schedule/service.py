@@ -3,7 +3,7 @@
 处理日程的增删改查
 """
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_
 from typing import List, Optional
 from datetime import datetime, timedelta
 import logging
@@ -28,19 +28,7 @@ class ScheduleService:
         description: Optional[str] = None,
         remind_before: int = 0
     ) -> Optional[Schedule]:
-        """
-        创建日程
-
-        Args:
-            user_id: 用户ID
-            title: 日程标题
-            time_str: 时间字符串
-            description: 详细描述
-            remind_before: 提前提醒分钟数
-
-        Returns:
-            创建的日程对象，失败返回 None
-        """
+        """创建日程"""
         try:
             # 解析时间
             scheduled_time = parse_time(time_str)
@@ -97,17 +85,7 @@ class ScheduleService:
         date_str: Optional[str] = None,
         status: str = "active"
     ) -> List[Schedule]:
-        """
-        获取用户的日程列表
-
-        Args:
-            user_id: 用户ID
-            date_str: 日期筛选（今天、明天、本周等）
-            status: 状态筛选
-
-        Returns:
-            日程列表
-        """
+        """获取用户的日程列表"""
         try:
             query = select(Schedule).where(
                 and_(
@@ -214,17 +192,7 @@ class ScheduleService:
         keyword: str,
         date_str: Optional[str] = None
     ) -> List[Schedule]:
-        """
-        通过关键词查找日程
-
-        Args:
-            user_id: 用户ID
-            keyword: 搜索关键词（匹配标题）
-            date_str: 日期筛选（可选）
-
-        Returns:
-            匹配的日程列表
-        """
+        """通过关键词查找日程"""
         try:
             query = select(Schedule).where(
                 and_(
@@ -254,49 +222,6 @@ class ScheduleService:
             logger.error(f"搜索日程失败: {e}")
             return []
 
-    async def shift_schedule_time(
-        self,
-        schedule_id: int,
-        user_id: str,
-        shift_minutes: int
-    ) -> Optional[Schedule]:
-        """
-        偏移日程时间
-
-        Args:
-            schedule_id: 日程ID
-            user_id: 用户ID
-            shift_minutes: 偏移分钟数（正数=推迟，负数=提前）
-
-        Returns:
-            更新后的日程
-        """
-        try:
-            schedule = await self.get_schedule(schedule_id, user_id)
-            if not schedule:
-                return None
-
-            new_time = schedule.scheduled_time + timedelta(minutes=shift_minutes)
-
-            # 验证新时间不能是过去
-            if new_time < datetime.now():
-                logger.warning(f"偏移后的时间不能是过去: {new_time}")
-                return None
-
-            schedule.scheduled_time = new_time
-            schedule.updated_at = datetime.utcnow()
-            await self.db.commit()
-            await self.db.refresh(schedule)
-
-            direction = "推迟" if shift_minutes > 0 else "提前"
-            logger.info(f"日程时间{direction}: id={schedule_id}, 偏移={shift_minutes}分钟")
-            return schedule
-
-        except Exception as e:
-            logger.error(f"偏移日程时间失败: {e}")
-            await self.db.rollback()
-            return None
-
     def _parse_date_range(self, date_str: str) -> tuple[Optional[datetime], Optional[datetime]]:
         """解析日期范围"""
         now = datetime.now()
@@ -314,14 +239,12 @@ class ScheduleService:
             end = start + timedelta(days=1)
             return (start, end)
         elif "本周" in date_str:
-            # 本周一到本周日
             days_since_monday = now.weekday()
             monday = now - timedelta(days=days_since_monday)
             start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
             end = start + timedelta(days=7)
             return (start, end)
         elif "下周" in date_str:
-            # 下周一到下周日
             days_since_monday = now.weekday()
             next_monday = now + timedelta(days=(7 - days_since_monday))
             start = next_monday.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -331,13 +254,13 @@ class ScheduleService:
         return (None, None)
 
     def format_schedule(self, schedule: Schedule) -> str:
-        """格式化日程显示 - 标准化格式"""
+        """格式化日程显示"""
         time_str = format_time(schedule.scheduled_time)
 
-        result = f"📌 标题：{schedule.title}\n"
-        result += f"⏰ 时间：{time_str}"
+        result = f"标题：{schedule.title}\n"
+        result += f"时间：{time_str}"
 
         if schedule.description:
-            result += f"\n📝 备注：{schedule.description}"
+            result += f"\n备注：{schedule.description}"
 
         return result

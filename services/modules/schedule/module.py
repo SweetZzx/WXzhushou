@@ -9,8 +9,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.modules.base import BaseModule
-from services.chat_with_action import ScheduleAction  # 使用统一的 Action 定义
-from services.schedule_service import ScheduleService
+from services.chat_with_action import ScheduleAction
+from services.modules.schedule.service import ScheduleService
 from services.reminder_service import reminder_service
 from utils.time_parser import parse_time
 
