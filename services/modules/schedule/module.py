@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.modules.base import BaseModule
 from services.chat_with_action import ScheduleAction
 from services.modules.schedule.service import ScheduleService
-from services.reminder_service import reminder_service
 from utils.time_parser import parse_time
 
 logger = logging.getLogger(__name__)
@@ -69,6 +68,11 @@ class ScheduleModule(BaseModule):
 
     def get_prompt_section(self) -> str:
         return SCHEDULE_PROMPT
+
+    def get_reminders(self) -> list:
+        """返回日程模块的提醒服务"""
+        from services.modules.schedule.reminder import daily_schedule_reminder, pre_schedule_reminder
+        return [daily_schedule_reminder, pre_schedule_reminder]
 
     async def _handle_create(self, action: ScheduleAction, user_id: str, db_session) -> str:
         """创建日程"""
@@ -201,45 +205,13 @@ class ScheduleModule(BaseModule):
 
     async def _handle_settings(self, user_id: str) -> str:
         """查看提醒设置"""
-        settings = await reminder_service.get_user_settings(user_id)
-
-        if settings:
-            daily_status = "已开启" if settings["daily_reminder_enabled"] else "已关闭"
-            pre_status = "已开启" if settings["pre_schedule_reminder_enabled"] else "已关闭"
-
-            return (
-                f"你的提醒设置：\n\n"
-                f"每日日程提醒：{daily_status}\n"
-                f"  提醒时间：{settings['daily_reminder_time']}\n\n"
-                f"日程开始前提醒：{pre_status}\n"
-                f"  提前 {settings['pre_schedule_reminder_minutes']} 分钟提醒"
-            )
-
-        return "获取设置失败，请稍后重试"
+        # TODO: 重构提醒设置功能
+        return "提醒设置功能正在重构中，请稍后再试"
 
     async def _handle_update_settings(self, action: ScheduleAction, user_id: str) -> str:
         """修改提醒设置"""
-        settings = await reminder_service.update_user_settings(
-            user_id=user_id,
-            daily_reminder_enabled=action.daily_reminder_enabled,
-            daily_reminder_time=action.daily_reminder_time,
-            pre_schedule_reminder_enabled=action.pre_reminder_enabled,
-            pre_schedule_reminder_minutes=action.pre_reminder_minutes
-        )
-
-        if settings:
-            daily_status = "已开启" if settings.daily_reminder_enabled else "已关闭"
-            pre_status = "已开启" if settings.pre_schedule_reminder_enabled else "已关闭"
-
-            return (
-                f"设置已更新！\n\n"
-                f"每日日程提醒：{daily_status}\n"
-                f"  提醒时间：{settings.daily_reminder_time}\n\n"
-                f"日程开始前提醒：{pre_status}\n"
-                f"  提前 {settings.pre_schedule_reminder_minutes} 分钟提醒"
-            )
-
-        return "更新设置失败，请稍后重试"
+        # TODO: 重构提醒设置功能
+        return "提醒设置功能正在重构中，请稍后再试"
 
 
 # 创建模块实例并注册

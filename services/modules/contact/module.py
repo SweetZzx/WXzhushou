@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.modules.base import BaseModule
 from services.chat_with_action import ContactAction
 from services.modules.contact.service import ContactService
+from services.reminder.base import BaseReminder
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,11 @@ class ContactModule(BaseModule):
 
     def get_prompt_section(self) -> str:
         return CONTACT_PROMPT
+
+    def get_reminders(self) -> list:
+        """返回联系人模块的提醒服务"""
+        from services.modules.contact.reminder import birthday_reminder
+        return [birthday_reminder]
 
     async def _handle_create(
         self,

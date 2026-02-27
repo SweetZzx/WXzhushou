@@ -115,6 +115,22 @@ class ModuleRegistry:
         cls._initialized = True
         logger.info(f"模块系统初始化完成，共 {len(cls._modules)} 个模块")
 
+    @classmethod
+    def get_all_reminders(cls) -> List:
+        """
+        获取所有模块的提醒服务
+
+        Returns:
+            所有提醒服务列表
+        """
+        reminders = []
+        for module in cls._modules.values():
+            module_reminders = module.get_reminders()
+            reminders.extend(module_reminders)
+
+        logger.info(f"共获取 {len(reminders)} 个提醒服务")
+        return reminders
+
 
 # 全局注册表实例
 registry = ModuleRegistry()

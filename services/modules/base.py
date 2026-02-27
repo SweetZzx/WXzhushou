@@ -3,7 +3,7 @@
 定义模块的标准接口
 """
 from abc import ABC, abstractmethod
-from typing import Type, Optional
+from typing import Type, Optional, List
 
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,6 +64,17 @@ class BaseModule(ABC):
         """
         pass
 
+    def get_reminders(self) -> List["BaseReminder"]:
+        """
+        返回该模块的提醒服务列表
+
+        子类可以覆盖此方法，返回模块相关的提醒服务
+
+        Returns:
+            提醒服务列表（默认为空）
+        """
+        return []
+
     def get_action_field_name(self) -> str:
         """
         获取 Action 在 AIOutput 中的字段名
@@ -75,3 +86,8 @@ class BaseModule(ABC):
 
     def __repr__(self) -> str:
         return f"<Module {self.module_id}: {self.module_name}>"
+
+
+# 避免循环导入
+from services.reminder.base import BaseReminder
+
