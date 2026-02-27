@@ -1,16 +1,20 @@
 """
 聊天 + 意图检测服务
 LLM 负责自然对话 + 检测日程/联系人意图 + 提取结构化数据
+支持模块化动态生成 SYSTEM_PROMPT
 """
 import logging
 import json
 import re
-from typing import Optional, List, Union
+from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 from pydantic import BaseModel, Field
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from services.langchain_llm import get_llm
+
+if TYPE_CHECKING:
+    from services.modules.base import BaseModule
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,13 @@ class ContactAction(BaseModel):
     birthday: Optional[str] = Field(default=None, description="生日，格式: MM-DD")
     remark: Optional[str] = Field(default=None, description="备注（如：大学同学、前同事）")
     extra: Optional[str] = Field(default=None, description="其他信息（爱好、QQ、邮箱、地址等）")
-    query_field: Optional[str] = Field(default=None, description="查询的字段类型: phone/birthday/all，例如'电话是多少'为phone，'生日是什么'为birthday，'所有信息'为all或不填")
+    query_field: Optional[str] = Field(default=None, description="查询的字段类型: phone/birthday/all")
+
+
+class SubscriptionAction(BaseModel):
+    """订阅操作"""
+    type: str = Field(default="", description="操作类型: subscribe/unsubscribe/list_modules/list_subscriptions")
+    module_id: Optional[str] = Field(default=None, description="模块ID: schedule/contact")
 
 
 class AIOutput(BaseModel):
@@ -48,11 +58,12 @@ class AIOutput(BaseModel):
     reply: str = Field(description="给用户的回复内容")
     schedule_action: Optional[ScheduleAction] = Field(default=None, description="日程操作")
     contact_action: Optional[ContactAction] = Field(default=None, description="联系人操作")
+    subscription_action: Optional[SubscriptionAction] = Field(default=None, description="订阅操作")
 
     @property
     def action(self):
         """兼容旧代码的属性"""
-        return self.schedule_action or self.contact_action
+        return self.schedule_action or self.contact_action or self.subscription_action
 
     @property
     def action_type(self) -> str:
@@ -61,111 +72,105 @@ class AIOutput(BaseModel):
             return self.schedule_action.type
         if self.contact_action:
             return self.contact_action.type
+        if self.subscription_action:
+            return self.subscription_action.type
         return ""
 
 
 # ============================================
-# 系统提示词
+# SYSTEM_PROMPT 模板
 # ============================================
 
-SYSTEM_PROMPT = """你是一个智能助手，帮助用户管理日程和联系人。
+BASE_PROMPT = """你是一个智能助手，帮助用户管理日程和联系人。
 
 【重要规则】
 你必须且只能输出 JSON 格式，不要输出任何其他内容！
 不要复述用户的请求，不要输出错误信息，只输出 JSON！
 
-【日程意图判断】
-消息包含「时间 + 事件」时创建日程：
-- "下周五看电影" → 创建日程
-- "明天开会" → 创建日程
-- "明天有什么安排" → 查询日程（date: "明天"）
-- "所有日程" / "全部日程" / "我有哪些日程" → 查询日程（date: "所有"）
+【当前时间】
+{current_time}
+"""
 
-【联系人意图判断】
-只要消息提到某人的信息（电话、生日、爱好、QQ、邮箱、地址等），就应该创建/更新联系人：
-- "小明的电话是13812345678" → 创建联系人，记录电话
-- "小明生日是3月15号" → 创建/更新联系人，记录生日
-- "小明喜欢打篮球" → 创建/更新联系人，记录爱好到extra
-- "小明QQ是12345678" → 创建/更新联系人，记录QQ到extra
-- "小明邮箱是xx@qq.com" → 创建/更新联系人，记录邮箱到extra
-- "小明住在北京" → 创建/更新联系人，记录地址到extra
-- "小明的电话是多少" → 查询联系人，query_field: "phone"
-- "小明的生日是什么时候" → 查询联系人，query_field: "birthday"
-- "小明的信息" / "小明的所有信息" → 查询联系人，query_field: "all" 或不填
-- "我记录了哪些联系人" → 列出所有联系人
+SUBSCRIPTION_PROMPT = """
+【订阅管理】
+用户可以订阅或取消订阅功能模块：
+- "订阅日程" / "开启日程功能" → 订阅日程模块，module_id: "schedule"
+- "取消订阅日程" / "关闭日程功能" → 取消订阅日程模块
+- "订阅联系人" / "开启联系人功能" → 订阅联系人模块，module_id: "contact"
+- "取消订阅联系人" / "关闭联系人功能" → 取消订阅联系人模块
+- "我的订阅" / "我订阅了哪些功能" → 查看订阅状态
+- "可用的模块" / "有什么功能" → 查看所有可用模块
 
-【操作类型】
-日程操作：
-- create: 创建日程
-- query: 查询日程
-- update: 修改日程
-- delete: 删除日程
-- settings/update_settings: 查看或修改设置
+订阅操作类型：
+- subscribe: 订阅模块
+- unsubscribe: 取消订阅模块
+- list_subscriptions: 查看我的订阅
+- list_modules: 查看可用模块
+"""
 
-联系人操作：
-- contact_create: 添加联系人（有姓名+信息时自动创建或更新）
-- contact_query: 查询联系人
-- contact_delete: 删除联系人
-
+OUTPUT_FORMAT_PROMPT = """
 【输出格式 - 必须是有效 JSON】
 ```json
 {{
   "reply": "你的回复",
   "schedule_action": null,
-  "contact_action": null
+  "contact_action": null,
+  "subscription_action": null
 }}
 ```
-
-【当前时间】
-{current_time}
-
-【示例】
-用户: "下周五看电影"
-输出: {{"reply": "好嘞，帮你记下了！", "schedule_action": {{"type": "create", "title": "看电影", "time": "下周五"}}, "contact_action": null}}
-
-用户: "小明的电话是13812345678"
-输出: {{"reply": "好的，帮你记下小明的电话", "schedule_action": null, "contact_action": {{"type": "contact_create", "name": "小明", "phone": "13812345678"}}}}
-
-用户: "小明生日是3月15号"
-输出: {{"reply": "好的，记下了", "schedule_action": null, "contact_action": {{"type": "contact_create", "name": "小明", "birthday": "03-15"}}}}
-
-用户: "小明喜欢打篮球和看电影"
-输出: {{"reply": "好的，记下了小明的爱好", "schedule_action": null, "contact_action": {{"type": "contact_create", "name": "小明", "extra": "爱好：打篮球、看电影"}}}}
-
-用户: "小明QQ是12345678，邮箱是xiaoming@qq.com"
-输出: {{"reply": "好的，记下了", "schedule_action": null, "contact_action": {{"type": "contact_create", "name": "小明", "extra": "QQ：12345678，邮箱：xiaoming@qq.com"}}}}
-
-用户: "小明的电话是多少"
-输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "phone"}}}}
-
-用户: "小明的电话" / "小明电话"
-输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "phone"}}}}
-
-用户: "小明的生日是什么时候"
-输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "birthday"}}}}
-
-用户: "小明的生日" / "小明生日"
-输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "birthday"}}}}
-
-用户: "小明的所有信息"
-输出: {{"reply": "让我查一下...", "schedule_action": null, "contact_action": {{"type": "contact_query", "name": "小明", "query_field": "all"}}}}
-
-用户: "我记录了哪些联系人"
-输出: {{"reply": "让我看看...", "schedule_action": null, "contact_action": {{"type": "contact_query"}}}}
-
-用户: "你好呀"
-输出: {{"reply": "你好！有什么可以帮你的？", "schedule_action": null, "contact_action": null}}
-
-用户: "明天有什么安排"
-输出: {{"reply": "让我看看...", "schedule_action": {{"type": "query", "date": "明天"}}, "contact_action": null}}
-
-用户: "我所有的日程有哪些" / "所有日程" / "全部日程"
-输出: {{"reply": "让我看看...", "schedule_action": {{"type": "query", "date": "所有"}}, "contact_action": null}}
 
 【再次强调】
 无论用户问什么，你都只能输出 JSON 格式！
 不要输出「没有找到」之类的文字，那是系统的工作，不是你的工作。
-你只需要输出 JSON，系统会根据你的 JSON 去查询数据库并返回结果。"""
+你只需要输出 JSON，系统会根据你的 JSON 去查询数据库并返回结果。
+"""
+
+# 示例（通用）
+EXAMPLES_PROMPT = """
+【示例】
+用户: "你好呀"
+输出: {{"reply": "你好！有什么可以帮你的？", "schedule_action": null, "contact_action": null, "subscription_action": null}}
+
+用户: "我的订阅"
+输出: {{"reply": "让我看看...", "schedule_action": null, "contact_action": null, "subscription_action": {{"type": "list_subscriptions"}}}}
+
+用户: "有什么功能"
+输出: {{"reply": "让我看看...", "schedule_action": null, "contact_action": null, "subscription_action": {{"type": "list_modules"}}}}
+
+用户: "关闭日程功能"
+输出: {{"reply": "好的，帮你关闭日程功能", "schedule_action": null, "contact_action": null, "subscription_action": {{"type": "unsubscribe", "module_id": "schedule"}}}}
+"""
+
+
+def build_system_prompt(
+    enabled_modules: List["BaseModule"],
+    current_time: str
+) -> str:
+    """
+    根据用户订阅的模块动态构建 SYSTEM_PROMPT
+
+    Args:
+        enabled_modules: 用户已启用的模块列表
+        current_time: 当前时间字符串
+
+    Returns:
+        完整的 SYSTEM_PROMPT
+    """
+    parts = [
+        BASE_PROMPT.format(current_time=current_time),
+        SUBSCRIPTION_PROMPT
+    ]
+
+    # 添加各模块的提示词片段
+    for module in enabled_modules:
+        prompt_section = module.get_prompt_section()
+        if prompt_section:
+            parts.append(prompt_section)
+
+    parts.append(OUTPUT_FORMAT_PROMPT)
+    parts.append(EXAMPLES_PROMPT)
+
+    return "\n".join(parts)
 
 
 class ChatWithActionService:
@@ -177,6 +182,7 @@ class ChatWithActionService:
     async def process(
         self,
         message: str,
+        enabled_modules: List["BaseModule"] = None,
         history: List[dict] = None
     ) -> AIOutput:
         """
@@ -184,6 +190,7 @@ class ChatWithActionService:
 
         Args:
             message: 用户消息
+            enabled_modules: 用户已启用的模块列表
             history: 对话历史 [{"role": "user/assistant", "content": "..."}]
 
         Returns:
@@ -192,10 +199,12 @@ class ChatWithActionService:
         try:
             current_time = datetime.now().strftime("%Y年%m月%d日 %H:%M (%A)")
 
+            # 动态构建 SYSTEM_PROMPT
+            enabled_modules = enabled_modules or []
+            system_prompt = build_system_prompt(enabled_modules, current_time)
+
             # 构建消息
-            messages = [
-                SystemMessage(content=SYSTEM_PROMPT.format(current_time=current_time))
-            ]
+            messages = [SystemMessage(content=system_prompt)]
 
             # 添加历史
             if history:
@@ -220,6 +229,8 @@ class ChatWithActionService:
                 logger.info(f"[日程意图] type={result.schedule_action.type}")
             elif result.contact_action:
                 logger.info(f"[联系人意图] type={result.contact_action.type}, name={result.contact_action.name}")
+            elif result.subscription_action:
+                logger.info(f"[订阅意图] type={result.subscription_action.type}, module={result.subscription_action.module_id}")
             else:
                 logger.info(f"[普通聊天] {result.reply[:30] if result.reply else 'N/A'}...")
 
@@ -246,7 +257,6 @@ class ChatWithActionService:
 
             # 如果内容不直接是 JSON 对象，尝试提取第一个 JSON 对象
             if not content.startswith("{"):
-                # 尝试找到第一个 { 和最后一个 }
                 start = content.find("{")
                 end = content.rfind("}")
                 if start != -1 and end != -1 and end > start:
@@ -259,12 +269,15 @@ class ChatWithActionService:
             # 构建 AIOutput
             schedule_action = None
             contact_action = None
+            subscription_action = None
 
             # 兼容旧格式（只有 action 字段）
             if data.get("action") and isinstance(data["action"], dict):
                 action_type = data["action"].get("type", "")
                 if action_type.startswith("contact"):
                     contact_action = ContactAction(**data["action"])
+                elif action_type in ["subscribe", "unsubscribe", "list_modules", "list_subscriptions"]:
+                    subscription_action = SubscriptionAction(**data["action"])
                 else:
                     schedule_action = ScheduleAction(**data["action"])
 
@@ -273,17 +286,22 @@ class ChatWithActionService:
                 schedule_action = ScheduleAction(**data["schedule_action"])
             if data.get("contact_action") and isinstance(data["contact_action"], dict):
                 contact_action = ContactAction(**data["contact_action"])
+            if data.get("subscription_action") and isinstance(data["subscription_action"], dict):
+                subscription_action = SubscriptionAction(**data["subscription_action"])
 
             # 日志记录解析结果
             if schedule_action:
                 logger.info(f"[JSON解析] 日程操作: type={schedule_action.type}")
             if contact_action:
                 logger.info(f"[JSON解析] 联系人操作: type={contact_action.type}, name={contact_action.name}")
+            if subscription_action:
+                logger.info(f"[JSON解析] 订阅操作: type={subscription_action.type}")
 
             return AIOutput(
                 reply=data.get("reply", ""),
                 schedule_action=schedule_action,
-                contact_action=contact_action
+                contact_action=contact_action,
+                subscription_action=subscription_action
             )
 
         except json.JSONDecodeError as e:

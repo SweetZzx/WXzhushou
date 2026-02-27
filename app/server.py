@@ -25,6 +25,19 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}")
 
+    # 注册模块
+    try:
+        from services.modules.registry import registry
+        from services.modules.schedule.module import schedule_module
+        from services.modules.contact.module import contact_module
+
+        registry.register(schedule_module)
+        registry.register(contact_module)
+        registry.mark_initialized()
+        logger.info("模块注册成功")
+    except Exception as e:
+        logger.error(f"模块注册失败: {e}")
+
     # 启动提醒服务
     try:
         from services.reminder_service import reminder_service
