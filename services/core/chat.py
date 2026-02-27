@@ -137,6 +137,13 @@ SETTINGS_PROMPT = """
 
 OUTPUT_FORMAT_PROMPT = """
 【输出格式 - 必须是有效 JSON】
+每次输出都必须包含以下 5 个字段，缺一不可：
+- reply: 你的回复内容
+- schedule_action: 日程操作（无则为 null）
+- contact_action: 联系人操作（无则为 null）
+- subscription_action: 订阅操作（无则为 null）
+- settings_action: 设置操作（无则为 null）
+
 ```json
 {{
   "reply": "你的回复",
@@ -148,9 +155,9 @@ OUTPUT_FORMAT_PROMPT = """
 ```
 
 【再次强调】
-无论用户问什么，你都只能输出 JSON 格式！
-不要输出「没有找到」之类的文字，那是系统的工作，不是你的工作。
-你只需要输出 JSON，系统会根据你的 JSON 去查询数据库并返回结果。
+1. 必须输出完整的 5 个字段，不能省略任何字段！
+2. 无论用户问什么，你都只能输出 JSON 格式！
+3. 不要输出「没有找到」之类的文字，那是系统的工作。
 """
 
 # 示例（通用）
