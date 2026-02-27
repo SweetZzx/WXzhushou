@@ -17,18 +17,15 @@ logger = logging.getLogger(__name__)
 CONTACT_PROMPT = """
 【联系人意图判断】
 只要消息提到某人的信息（电话、生日、爱好、QQ、邮箱、地址等），就应该创建/更新联系人：
-- "小明的电话是13812345678" → 创建联系人，记录电话
-- "小明生日是3月15号" → 创建/更新联系人，记录生日
-- "小明喜欢打篮球" → 创建/更新联系人，记录爱好到extra
-- "小明QQ是12345678" → 创建/更新联系人，记录QQ到extra
-- "小明邮箱是xx@qq.com" → 创建/更新联系人，记录邮箱到extra
-- "小明住在北京" → 创建/更新联系人，记录地址到extra
-- "小明的电话是多少" → 查询联系人，query_field: "phone"
-- "小明的电话" / "小明电话" → 查询联系人，query_field: "phone"
-- "小明的生日是什么时候" → 查询联系人，query_field: "birthday"
-- "小明的生日" / "小明生日" → 查询联系人，query_field: "birthday"
-- "小明的信息" / "小明的所有信息" → 查询联系人，query_field: "all" 或不填
-- "我记录了哪些联系人" → 列出所有联系人
+- "小明的电话是13812345678" → type: "contact_create", name: "小明", phone: "13812345678"
+- "小明生日是3月15号" → type: "contact_create", name: "小明", birthday: "03-15"
+- "小明喜欢打篮球" → type: "contact_create", name: "小明", extra: "爱好：打篮球"
+- "小明的电话是多少" → type: "contact_query", name: "小明", query_field: "phone"
+- "小明的电话" → type: "contact_query", name: "小明", query_field: "phone"
+- "小明的生日是什么时候" → type: "contact_query", name: "小明", query_field: "birthday"
+- "小明的生日" → type: "contact_query", name: "小明", query_field: "birthday"
+- "小明的所有信息" → type: "contact_query", name: "小明", query_field: "all"
+- "我记录了哪些联系人" → type: "contact_query"（不填name）
 """
 
 
