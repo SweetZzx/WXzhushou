@@ -8,9 +8,10 @@ import time
 from collections import defaultdict
 from typing import List
 
-from services.chat_with_action import chat_service
+from services.core.chat import chat_service
 from services.modules.registry import registry
 from services.modules.subscription import SubscriptionService
+from services.modules.settings.module import settings_module
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +49,23 @@ class LangChainAgentService:
             response = None
             action_type = "💬"
 
+            # 处理设置操作（优先级最高）
+            if ai_output.settings_action:
+                response = await settings_module.execute(
+                    ai_output.settings_action,
+                    user_id,
+                    db_session
+                )
+                action_type = "⚙️"
+
             # 处理订阅操作
-            if ai_output.subscription_action:
+            elif ai_output.subscription_action:
                 response = await self._handle_subscription(
                     ai_output.subscription_action,
                     user_id,
                     db_session
                 )
-                action_type = "⚙️"
+                action_type = "📋"
 
             # 处理日程操作
             elif ai_output.schedule_action:

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.modules.base import BaseModule
-from services.chat_with_action import ScheduleAction
+from services.core.chat import ScheduleAction
 from services.modules.schedule.service import ScheduleService
 from utils.time_parser import parse_time
 
@@ -59,10 +59,6 @@ class ScheduleModule(BaseModule):
             return await self._handle_update(action, user_id, db_session)
         elif action_type == "delete":
             return await self._handle_delete(action, user_id, db_session)
-        elif action_type == "settings":
-            return await self._handle_settings(user_id)
-        elif action_type == "update_settings":
-            return await self._handle_update_settings(action, user_id)
         else:
             return "未知的日程操作"
 
@@ -202,16 +198,6 @@ class ScheduleModule(BaseModule):
             return "已删除日程"
 
         return "删除失败"
-
-    async def _handle_settings(self, user_id: str) -> str:
-        """查看提醒设置"""
-        # TODO: 重构提醒设置功能
-        return "提醒设置功能正在重构中，请稍后再试"
-
-    async def _handle_update_settings(self, action: ScheduleAction, user_id: str) -> str:
-        """修改提醒设置"""
-        # TODO: 重构提醒设置功能
-        return "提醒设置功能正在重构中，请稍后再试"
 
 
 # 创建模块实例并注册

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.modules.base import BaseModule
-from services.chat_with_action import ContactAction
+from services.core.chat import ContactAction
 from services.modules.contact.service import ContactService
 from services.reminder.base import BaseReminder
 

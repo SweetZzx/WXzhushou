@@ -22,18 +22,13 @@ class WeChatPushService:
         self._token_expires_at: Optional[datetime] = None
 
     async def get_access_token(self) -> Optional[str]:
-        """
-        获取微信 access_token
-
-        Returns:
-            access_token 或 None
-        """
-        # 检查缓存的 token 是否有效
+        """获取微信 access_token"""
+        # 检查缓存
         if self._access_token and self._token_expires_at:
             if datetime.now() < self._token_expires_at:
                 return self._access_token
 
-        # 请求新的 token
+        # 请求新 token
         url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={self.app_id}&secret={self.app_secret}"
 
         try:
@@ -43,7 +38,6 @@ class WeChatPushService:
 
                 if "access_token" in data:
                     self._access_token = data["access_token"]
-                    # token 有效期 7200 秒，提前 5 分钟刷新
                     expires_in = data.get("expires_in", 7200)
                     self._token_expires_at = datetime.now() + timedelta(seconds=expires_in - 300)
                     logger.info("获取微信 access_token 成功")
@@ -67,11 +61,11 @@ class WeChatPushService:
         Returns:
             是否发送成功
         """
-        logger.info(f"准备发送消息: user_id={user_id}, content_length={len(content)}")
+        logger.info(f"准备发送消息: user_id={user_id}")
 
         access_token = await self.get_access_token()
         if not access_token:
-            logger.error("无法获取 access_token，消息发送失败")
+            logger.error("无法获取 access_token")
             return False
 
         url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
@@ -79,24 +73,19 @@ class WeChatPushService:
         payload = {
             "touser": user_id,
             "msgtype": "text",
-            "text": {
-                "content": content
-            }
+            "text": {"content": content}
         }
 
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                logger.info(f"发送请求到微信API: url={url[:50]}...")
                 response = await client.post(url, json=payload)
                 data = response.json()
-
-                logger.info(f"微信API响应: {data}")
 
                 if data.get("errcode") == 0:
                     logger.info(f"消息发送成功: user_id={user_id}")
                     return True
                 else:
-                    logger.error(f"消息发送失败: errcode={data.get('errcode')}, errmsg={data.get('errmsg')}")
+                    logger.error(f"消息发送失败: {data}")
                     return False
 
         except Exception as e:
@@ -110,18 +99,7 @@ class WeChatPushService:
         data: dict,
         url: Optional[str] = None
     ) -> bool:
-        """
-        发送模板消息（需要认证的服务号）
-
-        Args:
-            user_id: 用户 OpenID
-            template_id: 模板 ID
-            data: 模板数据
-            url: 点击跳转链接
-
-        Returns:
-            是否发送成功
-        """
+        """发送模板消息"""
         access_token = await self.get_access_token()
         if not access_token:
             return False

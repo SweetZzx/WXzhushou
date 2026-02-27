@@ -9,9 +9,9 @@ import hashlib
 import logging
 
 from config import WECHAT_TOKEN, WECHAT_MODE
-from services.wechat_service import WeChatService, media_service
-from services.langchain_agent import langchain_agent
-from services.asr_service import ASRService
+from services.wechat import wechat_service, wechat_media_service
+from services.core.agent import langchain_agent
+from services.asr import ASRService
 from database.session import get_db
 
 logger = logging.getLogger(__name__)
@@ -19,9 +19,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # 初始化服务
-wechat_service = WeChatService()
 asr_service = ASRService()
-# langchain_agent 是全局单例，无需初始化
+# wechat_service 和 langchain_agent 是全局单例，无需初始化
 
 
 class XMLResponse:
@@ -127,7 +126,7 @@ async def wechat_message(request: Request, db = Depends(get_db)):
             logger.info(f"收到语音消息: media_id={media_id}")
 
             # 下载语音文件
-            audio_data = await media_service.download_media(media_id)
+            audio_data = await wechat_media_service.download_media(media_id)
             if not audio_data:
                 xml_response = wechat_service.create_response_xml("下载语音文件失败，请稍后重试", from_user, to_user)
                 return Response(content=xml_response, media_type="application/xml")
