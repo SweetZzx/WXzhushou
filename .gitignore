@@ -76,3 +76,7 @@ uv.lock
 # 敏感文件
 setupssh
 setup-ssh-key.ps1
+
+# 前端
+frontend/node_modules/
+frontend/dist/

@@ -8,7 +8,7 @@ from typing import List
 
 from services.reminder.base import BaseReminder
 from database import db_session
-from services.wechat_push_service import wechat_push_service
+from services.wechat import wechat_push_service
 
 logger = logging.getLogger(__name__)
 

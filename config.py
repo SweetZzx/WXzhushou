@@ -45,7 +45,19 @@ SERVER_RELOAD: bool = os.getenv("SERVER_RELOAD", "false").lower() == "true"
 # 数据配置
 # ============================================
 DATA_DIR: str = os.getenv("DATA_DIR", str(BASE_DIR / "data"))
-DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR}/wechat.db")
+
+# MySQL 数据库配置
+MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
+MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
+MYSQL_USER: str = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "135935")
+MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "wxzhushou")
+
+# 构建数据库连接 URL（优先使用环境变量，其次使用 MySQL 配置）
+DATABASE_URL: str = os.getenv(
+    "DATABASE_URL",
+    f"mysql+aiomysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}?charset=utf8mb4"
+)
 
 # ============================================
 # 日志配置
@@ -113,12 +125,17 @@ class Config:
 
         # LangSmith 配置
         print("【LangSmith】")
-        print(f"  追踪: {'✅ 已启用' if LANGCHAIN_TRACING_V2 else '❌ 未启用'}")
+        print(f"  追踪: {'已启用' if LANGCHAIN_TRACING_V2 else '未启用'}")
         print(f"  项目: {LANGCHAIN_PROJECT}")
 
         # 服务器配置
         print("【服务器】")
         print(f"  地址: {SERVER_HOST}:{SERVER_PORT}")
+
+        # 数据库配置
+        print("【数据库】")
+        print(f"  类型: {'MySQL' if 'mysql' in DATABASE_URL else 'SQLite'}")
+        print(f"  地址: {MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}")
 
         print("=" * 50)
 

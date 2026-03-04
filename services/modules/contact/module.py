@@ -17,9 +17,11 @@ logger = logging.getLogger(__name__)
 # 联系人模块的 SYSTEM_PROMPT 片段
 CONTACT_PROMPT = """
 【联系人意图判断】
-只要消息提到某人的信息（电话、生日、爱好、QQ、邮箱、地址等），就应该创建/更新联系人：
+只要消息提到某人的信息（电话、生日、备注、爱好等），就应该创建/更新联系人：
 - "小明的电话是13812345678" → type: "contact_create", name: "小明", phone: "13812345678"
 - "小明生日是3月15号" → type: "contact_create", name: "小明", birthday: "03-15"
+- "小明是我大学同学" → type: "contact_create", name: "小明", remark: "大学同学"
+- "给李颖备注对象" → type: "contact_create", name: "李颖", remark: "对象"
 - "小明喜欢打篮球" → type: "contact_create", name: "小明", extra: "爱好：打篮球"
 - "小明的电话是多少" → type: "contact_query", name: "小明", query_field: "phone"
 - "小明的电话" → type: "contact_query", name: "小明", query_field: "phone"
@@ -129,12 +131,27 @@ class ContactModule(BaseModule):
         """查询联系人"""
         try:
             if action.name:
-                clean_name = action.name.rstrip("的")
+                # 清理名称：去掉"我的"、"我"前缀和"的"后缀
+                clean_name = action.name
+                for prefix in ["我的", "我"]:
+                    if clean_name.startswith(prefix):
+                        clean_name = clean_name[len(prefix):]
+                clean_name = clean_name.rstrip("的")
+
                 logger.info(f"[联系人查询] 原始名称: {action.name}, 清理后: {clean_name}, 查询字段: {action.query_field}")
 
-                contact = await contact_service.find_by_name(user_id, action.name)
-                if not contact and clean_name != action.name:
-                    contact = await contact_service.find_by_name(user_id, clean_name)
+                # 先精确匹配
+                contact = await contact_service.find_by_name(user_id, clean_name)
+                if not contact:
+                    contact = await contact_service.find_by_name(user_id, action.name)
+
+                # 再模糊匹配
+                if not contact:
+                    contacts = await contact_service.search_contacts(user_id, clean_name)
+                    if len(contacts) == 1:
+                        contact = contacts[0]
+                    elif len(contacts) > 1:
+                        return f"找到 {len(contacts)} 个匹配的联系人，请说具体一点"
 
                 if not contact:
                     name = clean_name or action.name
